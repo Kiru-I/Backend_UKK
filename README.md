@@ -40,8 +40,18 @@ src/
 
 ### Install dependency
 
+Pilih salah satu cara berikut:
+
+#### Menggunakan Bun
+
 ```bash
 bun install
+```
+
+#### Menggunakan npm
+
+```bash
+npm install
 ```
 
 ### Konfigurasi environment
@@ -54,10 +64,66 @@ JWT_SECRET=travel-management-secret
 PORT=3000
 ```
 
+### Setup database MySQL / Laragon
+
+1. Pastikan MySQL server sudah aktif. Jika pakai Laragon/XAMPP, nyalakan service MySQL-nya terlebih dahulu.
+2. Buat database yang digunakan project:
+
+```bash
+mysql -u root -p
+CREATE DATABASE travel_db;
+EXIT;
+```
+
+Atau jika menggunakan Laragon dengan password kosong, cukup gunakan URL seperti:
+
+```env
+DATABASE_URL=mysql://root:@localhost:3306/travel_db
+```
+
+3. Sesuaikan username/password di `.env` dengan konfigurasi local MySQL kalian.
+4. Jalankan migrasi database Drizzle agar tabel dibuat:
+
+#### Jika pakai Bun
+
+```bash
+bun run db:generate
+bun run db:migrate
+```
+
+#### Jika pakai npm
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+5. Jika ingin data awal/sample user terisi, jalankan:
+
+#### Jika pakai Bun
+
+```bash
+bun run seed
+```
+
+#### Jika pakai npm
+
+```bash
+npm run seed
+```
+
 ### Menjalankan server
+
+#### Jika pakai Bun
 
 ```bash
 bun run dev
+```
+
+#### Jika pakai npm
+
+```bash
+npm run dev
 ```
 
 Server akan berjalan di:
