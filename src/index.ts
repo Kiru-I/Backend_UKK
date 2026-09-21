@@ -12,6 +12,23 @@ const app = new Hono();
 
 app.use('*', cors());
 
+app.get('/uploads/*', async (c) => {
+  const requestPath = c.req.path.replace(/^\/uploads\//, '');
+  const filePath = `./uploads/${requestPath}`;
+  const file = Bun.file(filePath);
+
+  if (!(await file.exists())) {
+    return c.json({ error: 'Not Found', message: 'The requested file was not found.' }, 404);
+  }
+
+  const mimeType = file.type || 'application/octet-stream';
+  return new Response(file, {
+    headers: {
+      'Content-Type': mimeType,
+    },
+  });
+});
+
 app.route('/api/auth', authRoutes);
 app.route('/api/users', usersRoutes);
 app.route('/api/travels', travelRoutes);

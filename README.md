@@ -1,19 +1,19 @@
-# Backend Corporate Travel Management System
+# Corporate Travel Management Backend
 
-Dokumentasi ini berisi panduan penggunaan API backend untuk aplikasi Corporate Travel Management System. Dokumentasi ditulis dalam bahasa Indonesia agar memudahkan integrasi frontend, QA, dan tim terkait.
+Backend API for employee travel request management, approval workflow, booking fulfillment, and reimbursement processing.
 
-## 1. Ringkasan Proyek
+This project is built with Bun, Hono, MySQL, and Drizzle ORM.
 
-Backend ini dibangun dengan:
+## Tech stack
 
 - Runtime: Bun
-- Framework: Hono.js
+- Framework: Hono
 - Database: MySQL
 - ORM: Drizzle ORM
-- Autentikasi: JWT + bcrypt
-- Arsitektur: modular dengan routes, middleware, services, dan schema database
+- Auth: JWT + bcryptjs
+- Validation: Zod
 
-## 2. Struktur Aplikasi
+## Project structure
 
 ```bash
 src/
@@ -25,116 +25,28 @@ src/
   middleware/
     auth.ts
   routes/
-    auth.ts
-    users.ts
-    travel.ts
     approval.ts
+    auth.ts
+    dashboard.ts
     fulfillment.ts
     reimbursement.ts
-    dashboard.ts
+    travel.ts
+    users.ts
   index.ts
   seed.ts
 ```
 
-## 3. Setup Awal
+## Features
 
-### Install dependency
+- User authentication and role-based access
+- Travel request submission
+- Travel approval and rejection by manager
+- Travel fulfillment recording by admin travel
+- Reimbursement submission and processing
+- Dashboard statistics and expense summary
+- Real file upload for travel documents
 
-Pilih salah satu cara berikut:
-
-#### Menggunakan Bun
-
-```bash
-bun install
-```
-
-#### Menggunakan npm
-
-```bash
-npm install
-```
-
-### Konfigurasi environment
-
-Buat file `.env` berdasarkan template `.env.example`:
-
-```env
-DATABASE_URL=mysql://root:password@localhost:3306/travel_db
-JWT_SECRET=travel-management-secret
-PORT=3000
-```
-
-### Setup database MySQL / Laragon
-
-1. Pastikan MySQL server sudah aktif. Jika pakai Laragon/XAMPP, nyalakan service MySQL-nya terlebih dahulu.
-2. Buat database yang digunakan project:
-
-```bash
-mysql -u root -p
-CREATE DATABASE travel_db;
-EXIT;
-```
-
-Atau jika menggunakan Laragon dengan password kosong, cukup gunakan URL seperti:
-
-```env
-DATABASE_URL=mysql://root:@localhost:3306/travel_db
-```
-
-3. Sesuaikan username/password di `.env` dengan konfigurasi local MySQL kalian.
-4. Jalankan migrasi database Drizzle agar tabel dibuat:
-
-#### Jika pakai Bun
-
-```bash
-bun run db:generate
-bun run db:migrate
-```
-
-#### Jika pakai npm
-
-```bash
-npx drizzle-kit generate
-npx drizzle-kit migrate
-```
-
-5. Jika ingin data awal/sample user terisi, jalankan:
-
-#### Jika pakai Bun
-
-```bash
-bun run seed
-```
-
-#### Jika pakai npm
-
-```bash
-npm run seed
-```
-
-### Menjalankan server
-
-#### Jika pakai Bun
-
-```bash
-bun run dev
-```
-
-#### Jika pakai npm
-
-```bash
-npm run dev
-```
-
-Server akan berjalan di:
-
-```text
-http://localhost:3000
-```
-
-## 4. Role / RBAC
-
-Role yang tersedia:
+## Roles
 
 - Karyawan
 - Atasan
@@ -142,23 +54,78 @@ Role yang tersedia:
 - Tim Keuangan
 - Super Admin
 
-Hak akses utama:
+## Prerequisites
 
-- Karyawan: submit travel, lihat request sendiri, submit reimbursement
-- Atasan: review dan approve/reject request
-- Admin Travel: proses fulfillment booking
-- Tim Keuangan: verifikasi reimbursement dan proses pembayaran
-- Super Admin: full access untuk user management, monitoring, dashboard
+Before running the project, make sure you have:
 
-## 5. Autentikasi
+- Bun installed
+- MySQL running locally or in a container
+- A database created for the app
 
-Semua endpoint yang membutuhkan login memakai header berikut:
+## Environment variables
+
+Create a `.env` file in the project root:
+
+```env
+DATABASE_URL=mysql://root:password@localhost:3306/travel_db
+JWT_SECRET=travel-management-secret
+PORT=3000
+APP_URL=http://localhost:3000
+```
+
+Notes:
+
+- `DATABASE_URL` should match your local MySQL credentials
+- `APP_URL` is used when generating uploaded file URLs
+
+## Setup
+
+Install dependencies:
+
+```bash
+bun install
+```
+
+Create the database in MySQL:
+
+```sql
+CREATE DATABASE travel_db;
+```
+
+Generate and apply migrations:
+
+```bash
+bun run db:generate
+bun run db:migrate
+```
+
+Seed sample data:
+
+```bash
+bun run seed
+```
+
+Run the server:
+
+```bash
+bun run dev
+```
+
+The app runs at:
+
+```text
+http://localhost:3000
+```
+
+## Authentication
+
+All protected routes require a bearer token in the request header:
 
 ```http
 Authorization: Bearer <jwt_token>
 ```
 
-### Endpoint login
+### Login
 
 ```http
 POST /api/auth/login
@@ -173,11 +140,11 @@ Request body:
 }
 ```
 
-Response contoh:
+Example response:
 
 ```json
 {
-  "token": "eyJ...",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": 1,
     "name": "Super Administrator",
@@ -188,60 +155,198 @@ Response contoh:
 }
 ```
 
-### Endpoint profile user
+### Get current user
 
 ```http
 GET /api/auth/me
 ```
 
-Header:
-
-```http
-Authorization: Bearer <jwt_token>
-```
-
-## 6. Base URL
-
-Untuk frontend, gunakan base URL seperti berikut:
+## Base API URL
 
 ```text
-http://localhost:3000
+http://localhost:3000/api
 ```
 
-## 7. Format Response Umum
+## Travel file upload
 
-### Response sukses
+Travel submission supports real multipart upload for document attachments.
+
+### Upload via form-data
+
+```http
+POST /api/travels
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+Form fields:
+
+- `destination`
+- `start_date`
+- `end_date`
+- `purpose`
+- `document` (file)
+
+Example using curl:
+
+```bash
+curl -X POST http://localhost:3000/api/travels \
+  -H "Authorization: Bearer <token>" \
+  -F "destination=Jakarta" \
+  -F "start_date=2026-09-12" \
+  -F "end_date=2026-09-14" \
+  -F "purpose=Rapat bisnis dengan tim regional" \
+  -F "document=@/path/to/tor.pdf"
+```
+
+The uploaded file is saved to:
+
+```text
+./uploads/travel-documents/
+```
+
+and the saved URL is returned as:
+
+```text
+http://localhost:3000/uploads/travel-documents/<filename>
+```
+
+You can also still send a URL directly:
 
 ```json
 {
-  "message": "Operasi berhasil",
-  "data": {}
+  "destination": "Jakarta",
+  "start_date": "2026-09-12",
+  "end_date": "2026-09-14",
+  "purpose": "Rapat bisnis",
+  "document_url": "https://example.com/file.pdf"
 }
 ```
 
-### Response error
+## Routes
+
+### Auth
+
+```http
+POST /api/auth/login
+GET /api/auth/me
+```
+
+### Users
+
+```http
+GET /api/users
+POST /api/users
+PUT /api/users/:id
+DELETE /api/users/:id
+```
+
+### Travel
+
+```http
+POST /api/travels
+GET /api/travels/my-requests
+GET /api/travels/:id
+```
+
+### Approval
+
+```http
+GET /api/approvals
+POST /api/approvals/:id/action
+```
+
+Request body for approval:
 
 ```json
 {
-  "error": "Bad Request",
-  "message": "Request body is required."
+  "action": "APPROVE",
+  "notes": "Dokumen sudah lengkap."
 }
 ```
 
-### Status HTTP yang umum digunakan
+### Fulfillment
 
-- 200 OK
-- 201 Created
-- 400 Bad Request
-- 401 Unauthorized
-- 403 Forbidden
-- 404 Not Found
-- 409 Conflict
-- 500 Internal Server Error
+```http
+GET /api/fulfillment/pending
+POST /api/fulfillment/:travelId
+```
 
-## 8. Endpoint API
+Request body:
 
-### 8.1 Auth & User Management
+```json
+{
+  "transport_details": "Pesawat GA 301, seat 2A",
+  "accommodation_details": "Hotel Grand Indonesia, 3 malam"
+}
+```
+
+### Reimbursements
+
+```http
+POST /api/reimbursements/:travelId
+GET /api/reimbursements/pending
+POST /api/reimbursements/:id/process
+```
+
+Example reimbursement item:
+
+```json
+{
+  "items": [
+    {
+      "category": "Transportasi",
+      "amount": 2500000,
+      "receipt_url": "https://example.com/receipt.pdf",
+      "description": "Tiket pesawat pulang pergi"
+    }
+  ]
+}
+```
+
+### Dashboard
+
+```http
+GET /api/dashboard/stats
+GET /api/dashboard/expenses
+```
+
+## Example response format
+
+Success response:
+
+```json
+{
+  "message": "Travel request submitted successfully.",
+  "travelRequest": {
+    "id": 1,
+    "user_id": 2,
+    "destination": "Jakarta",
+    "start_date": "2026-09-12",
+    "end_date": "2026-09-14",
+    "purpose": "Rapat dengan tim sales",
+    "document_url": "http://localhost:3000/uploads/travel-documents/1726800000000-uuid.pdf",
+    "status": "PENDING"
+  }
+}
+```
+
+Error response:
+
+```json
+{
+  "error": "Validation Error",
+  "details": {
+    "fieldErrors": {
+      "destination": ["String must contain at least 2 character(s)"]
+    }
+  }
+}
+```
+
+## API Documentation
+
+### Authentication
 
 #### Login
 
@@ -249,22 +354,63 @@ http://localhost:3000
 POST /api/auth/login
 ```
 
-#### Profile user login
+Request body:
+
+```json
+{
+  "email": "superadmin@travel.local",
+  "password": "superadmin123"
+}
+```
+
+Response:
+
+```json
+{
+  "token": "jwt_token_here",
+  "user": {
+    "id": 1,
+    "name": "Super Administrator",
+    "email": "superadmin@travel.local",
+    "role": "Super Admin",
+    "department": "IT"
+  }
+}
+```
+
+#### Get current user
 
 ```http
 GET /api/auth/me
+Authorization: Bearer <token>
 ```
 
-#### List semua user (Super Admin)
+Response:
+
+```json
+{
+  "id": 1,
+  "name": "Super Administrator",
+  "email": "superadmin@travel.local",
+  "role": "Super Admin",
+  "department": "IT"
+}
+```
+
+### Users
+
+#### Get all users
 
 ```http
 GET /api/users
+Authorization: Bearer <token>
 ```
 
-#### Create user baru (Super Admin)
+#### Create user
 
 ```http
 POST /api/users
+Authorization: Bearer <token>
 ```
 
 Request body:
@@ -279,45 +425,54 @@ Request body:
 }
 ```
 
-#### Update user (Super Admin)
+#### Update user
 
 ```http
 PUT /api/users/:id
+Authorization: Bearer <token>
 ```
 
-Request body contoh:
+#### Delete user
 
-```json
-{
-  "name": "Dewi Kusuma",
-  "department": "Operations",
-  "role": "Atasan"
-}
+```http
+DELETE /api/users/:id
+Authorization: Bearer <token>
 ```
 
----
+### Travel requests
 
-### 8.2 Pengajuan Travel (Karyawan)
-
-#### Submit travel request
+#### Create travel request
 
 ```http
 POST /api/travels
+Authorization: Bearer <token>
 ```
 
-Request body:
+Multipart form-data option:
+
+```bash
+curl -X POST http://localhost:3000/api/travels \
+  -H "Authorization: Bearer <token>" \
+  -F "destination=Jakarta" \
+  -F "start_date=2026-09-12" \
+  -F "end_date=2026-09-14" \
+  -F "purpose=Rapat bisnis" \
+  -F "document=@/path/to/file.pdf"
+```
+
+JSON option:
 
 ```json
 {
-  "destination": "Singapore",
-  "start_date": "2026-10-10",
-  "end_date": "2026-10-15",
-  "purpose": "Meeting bisnis dengan mitra regional",
-  "document_url": "https://example.com/tor.pdf"
+  "destination": "Jakarta",
+  "start_date": "2026-09-12",
+  "end_date": "2026-09-14",
+  "purpose": "Rapat bisnis dengan tim regional",
+  "document_url": "https://example.com/document.pdf"
 }
 ```
 
-Response contoh:
+Response:
 
 ```json
 {
@@ -325,42 +480,44 @@ Response contoh:
   "travelRequest": {
     "id": 1,
     "user_id": 2,
-    "destination": "Singapore",
-    "start_date": "2026-10-10",
-    "end_date": "2026-10-15",
-    "purpose": "Meeting bisnis dengan mitra regional",
-    "document_url": "https://example.com/tor.pdf",
+    "destination": "Jakarta",
+    "start_date": "2026-09-12",
+    "end_date": "2026-09-14",
+    "purpose": "Rapat bisnis dengan tim regional",
+    "document_url": "http://localhost:3000/uploads/travel-documents/example.pdf",
     "status": "PENDING"
   }
 }
 ```
 
-#### List request milik user login
+#### Get my travel requests
 
 ```http
 GET /api/travels/my-requests
+Authorization: Bearer <token>
 ```
 
-#### Detail request travel tertentu
+#### Get one travel request
 
 ```http
 GET /api/travels/:id
+Authorization: Bearer <token>
 ```
 
----
+### Approvals
 
-### 8.3 Persetujuan Travel (Atasan)
-
-#### List request pending
+#### View pending approvals
 
 ```http
 GET /api/approvals
+Authorization: Bearer <token>
 ```
 
-#### Approve / Reject request
+#### Approve or reject request
 
 ```http
 POST /api/approvals/:id/action
+Authorization: Bearer <token>
 ```
 
 Request body:
@@ -372,7 +529,7 @@ Request body:
 }
 ```
 
-Atau:
+or:
 
 ```json
 {
@@ -381,54 +538,38 @@ Atau:
 }
 ```
 
----
+### Fulfillment
 
-### 8.4 Booking & Fulfillment (Admin Travel)
-
-#### List approved travel yang butuh fulfillment
+#### View approved requests for fulfillment
 
 ```http
 GET /api/fulfillment/pending
+Authorization: Bearer <token>
 ```
 
-#### Simpan detail transport & akomodasi
+#### Store fulfillment data
 
 ```http
 POST /api/fulfillment/:travelId
+Authorization: Bearer <token>
 ```
 
 Request body:
 
 ```json
 {
-  "transport_details": "Pesawat GA 456, seat 12A, kota tujuan Singapore",
-  "accommodation_details": "Hotel Mercure Singapore, check-in 10 Okt 2026, 2 kamar deluxe"
+  "transport_details": "Pesawat GA 301, seat 2A",
+  "accommodation_details": "Hotel Grand Indonesia, 3 malam"
 }
 ```
 
-Response contoh:
-
-```json
-{
-  "message": "Travel fulfillment recorded successfully.",
-  "fulfillment": {
-    "id": 1,
-    "travel_request_id": 1,
-    "transport_details": "Pesawat GA 456, seat 12A, kota tujuan Singapore",
-    "accommodation_details": "Hotel Mercure Singapore, check-in 10 Okt 2026, 2 kamar deluxe",
-    "admin_id": 7
-  }
-}
-```
-
----
-
-### 8.5 Reimbursement (Karyawan & Tim Keuangan)
+### Reimbursements
 
 #### Submit reimbursement
 
 ```http
 POST /api/reimbursements/:travelId
+Authorization: Bearer <token>
 ```
 
 Request body:
@@ -437,31 +578,33 @@ Request body:
 {
   "items": [
     {
-      "category": "Transport",
-      "amount": 250000,
-      "receipt_url": "https://example.com/receipt-transport.jpg",
-      "description": "Ticket pesawat"
+      "category": "Transportasi",
+      "amount": 2500000,
+      "receipt_url": "https://example.com/receipt.pdf",
+      "description": "Tiket pesawat pulang pergi"
     },
     {
-      "category": "Accommodation",
-      "amount": 700000,
-      "receipt_url": "https://example.com/receipt-hotel.jpg",
-      "description": "Hotel selama 3 malam"
+      "category": "Akomodasi",
+      "amount": 3200000,
+      "receipt_url": "https://example.com/hotel.pdf",
+      "description": "Biaya hotel untuk 3 malam"
     }
   ]
 }
 ```
 
-#### List reimbursement pending
+#### View pending reimbursements
 
 ```http
 GET /api/reimbursements/pending
+Authorization: Bearer <token>
 ```
 
-#### Proses reimbursement
+#### Process reimbursement
 
 ```http
 POST /api/reimbursements/:id/process
+Authorization: Bearer <token>
 ```
 
 Request body:
@@ -469,27 +612,26 @@ Request body:
 ```json
 {
   "status": "VERIFIED",
-  "notes": "Data lengkap dan sesuai bukti pengeluaran."
+  "notes": "Data sudah lengkap."
 }
 ```
 
-Status yang valid:
+Valid values:
 
 - VERIFIED
 - PAID
 - REJECTED
 
----
+### Dashboard
 
-### 8.6 Dashboard & Reports
-
-#### Statistik dashboard
+#### Statistics
 
 ```http
 GET /api/dashboard/stats
+Authorization: Bearer <token>
 ```
 
-Response contoh:
+Response:
 
 ```json
 {
@@ -499,13 +641,14 @@ Response contoh:
 }
 ```
 
-#### Ringkasan pengeluaran
+#### Expense summary
 
 ```http
 GET /api/dashboard/expenses
+Authorization: Bearer <token>
 ```
 
-Response contoh:
+Response:
 
 ```json
 {
@@ -518,6 +661,23 @@ Response contoh:
   ]
 }
 ```
+
+## Notes
+
+- The seed data is intentionally realistic for testing approvals, reimbursements, and fulfillment flows.
+- Uploaded files are stored locally in the `uploads/` folder for development purposes.
+- For production, it is recommended to move file storage to cloud object storage such as S3, Cloudinary, or Supabase Storage.
+
+## Useful commands
+
+```bash
+bun install
+bun run db:generate
+bun run db:migrate
+bun run seed
+bun run dev
+```
+
 
 ## 9. Data Model Inti
 
