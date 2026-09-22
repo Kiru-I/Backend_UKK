@@ -125,6 +125,39 @@ Semua endpoint yang dilindungi perlu membawa token bearer di header request:
 Authorization: Bearer <jwt_token>
 ```
 
+### Register
+
+```http
+POST /api/auth/register
+```
+
+Body request:
+
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "secret123",
+  "department": "IT",
+  "role": "Karyawan"
+}
+```
+
+Contoh response:
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com",
+    "role": "Karyawan",
+    "department": "IT"
+  }
+}
+```
+
 ### Login
 
 ```http
@@ -228,6 +261,7 @@ Kamu juga masih bisa mengirim URL file secara langsung seperti ini:
 ### Auth
 
 ```http
+POST /api/auth/register
 POST /api/auth/login
 GET /api/auth/me
 ```
@@ -345,6 +379,39 @@ GET /api/dashboard/expenses
 ```
 
 ## Dokumentasi API lebih lengkap
+
+### Register
+
+```http
+POST /api/auth/register
+```
+
+Body:
+
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "secret123",
+  "department": "IT",
+  "role": "Karyawan"
+}
+```
+
+Response:
+
+```json
+{
+  "token": "jwt_token_here",
+  "user": {
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com",
+    "role": "Karyawan",
+    "department": "IT"
+  }
+}
+```
 
 ### Login
 

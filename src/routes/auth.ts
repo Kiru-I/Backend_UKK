@@ -4,13 +4,71 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
-import { comparePassword, signToken } from '../lib/auth';
+import { comparePassword, hashPassword, signToken } from '../lib/auth';
 
 const authRoutes = new Hono();
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
+});
+
+const registerSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(6),
+  department: z.string().min(2),
+  role: z.enum(['Karyawan', 'Atasan', 'Admin Travel', 'Tim Keuangan', 'Super Admin']).optional().default('Karyawan'),
+});
+
+authRoutes.post('/register', async (c) => {
+  const body = await c.req.json().catch(() => null);
+
+  if (!body) {
+    return c.json({ error: 'Bad Request', message: 'Request body is required.' }, 400);
+  }
+
+  const parsed = registerSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation Error', details: parsed.error.flatten() }, 400);
+  }
+
+  const { name, email, password, department, role } = parsed.data;
+  const [existingUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+
+  if (existingUser) {
+    return c.json({ error: 'Conflict', message: 'A user with this email already exists.' }, 409);
+  }
+
+  const passwordHash = await hashPassword(password);
+  const [created] = await db.insert(users).values([
+    {
+      name,
+      email,
+      password_hash: passwordHash,
+      role,
+      department,
+    },
+  ]);
+
+  const userId = Number(created.insertId);
+  const token = await signToken({
+    id: userId,
+    email,
+    name,
+    role,
+  });
+
+  return c.json({
+    token,
+    user: {
+      id: userId,
+      name,
+      email,
+      role,
+      department,
+    },
+  }, 201);
 });
 
 authRoutes.post('/login', async (c) => {
