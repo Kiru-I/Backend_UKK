@@ -15,6 +15,13 @@
       "when": 1788231166164,
       "tag": "0001_deep_ser_duncan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1792026834609,
+      "tag": "0002_daffy_mac_gargan",
+      "breakpoints": true
     }
   ]
 }

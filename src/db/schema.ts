@@ -13,17 +13,23 @@ import {
 export const userRoles = ['Karyawan', 'Atasan', 'Admin Travel', 'Tim Keuangan', 'Super Admin'] as const;
 export const travelStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'FULFILLED', 'COMPLETED'] as const;
 export const approvalStatuses = ['APPROVED', 'REJECTED'] as const;
-export const reimbursementStatuses = ['SUBMITTED', 'VERIFIED', 'PAID', 'REJECTED'] as const;
+export const reimbursementStatuses = ['SUBMITTED', 'NEEDS_DOCUMENTS', 'VERIFIED', 'PAID', 'REJECTED'] as const;
+export const transportationModes = ['Pesawat', 'Kereta Api', 'Travel', 'Mobil Kantor'] as const;
+export const cashAdvanceStatuses = ['WAITING_PAYMENT', 'DISBURSED'] as const;
 
 export const roleEnum = mysqlEnum('role', userRoles);
 export const travelStatusEnum = mysqlEnum('status', travelStatuses);
 export const approvalStatusEnum = mysqlEnum('status', approvalStatuses);
 export const reimbursementStatusEnum = mysqlEnum('status', reimbursementStatuses);
+export const transportationModeEnum = mysqlEnum('transportation_mode', transportationModes);
+export const cashAdvanceStatusEnum = mysqlEnum('status', cashAdvanceStatuses);
 
 export type UserRole = (typeof userRoles)[number];
 export type TravelStatus = (typeof travelStatuses)[number];
 export type ApprovalStatus = (typeof approvalStatuses)[number];
 export type ReimbursementStatus = (typeof reimbursementStatuses)[number];
+export type TransportationMode = (typeof transportationModes)[number];
+export type CashAdvanceStatus = (typeof cashAdvanceStatuses)[number];
 
 export const users = mysqlTable('users', {
   id: int('id').autoincrement().primaryKey(),
@@ -43,8 +49,22 @@ export const travelRequests = mysqlTable('travel_requests', {
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
   purpose: text('purpose').notNull(),
+  transportation_mode: transportationModeEnum,
   document_url: text('document_url'),
   status: travelStatusEnum.notNull().default('PENDING'),
+  lpj_completed_at: timestamp('lpj_completed_at'),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+  updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
+});
+
+export const cashAdvances = mysqlTable('cash_advances', {
+  id: int('id').autoincrement().primaryKey(),
+  travel_request_id: int('travel_request_id').notNull().references(() => travelRequests.id, { onDelete: 'cascade' }),
+  user_id: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  estimated_cost: decimal('estimated_cost', { precision: 10, scale: 2 }).notNull(),
+  requested_amount: decimal('requested_amount', { precision: 10, scale: 2 }).notNull(),
+  returned_amount: decimal('returned_amount', { precision: 10, scale: 2 }).notNull().default('0.00'),
+  status: cashAdvanceStatusEnum.notNull().default('WAITING_PAYMENT'),
   created_at: timestamp('created_at').defaultNow().notNull(),
   updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
 });
@@ -88,6 +108,7 @@ export const reimbursementItems = mysqlTable('reimbursement_items', {
 
 export const usersRelations = relations(users, ({ many }) => ({
   travelRequests: many(travelRequests),
+  cashAdvances: many(cashAdvances),
   approvals: many(travelApprovals),
   fulfillments: many(travelFulfillments),
   reimbursements: many(reimbursements),
@@ -101,6 +122,18 @@ export const travelRequestsRelations = relations(travelRequests, ({ one, many })
   approvals: many(travelApprovals),
   fulfillment: many(travelFulfillments),
   reimbursement: many(reimbursements),
+  cashAdvances: many(cashAdvances),
+}));
+
+export const cashAdvancesRelations = relations(cashAdvances, ({ one }) => ({
+  travelRequest: one(travelRequests, {
+    fields: [cashAdvances.travel_request_id],
+    references: [travelRequests.id],
+  }),
+  user: one(users, {
+    fields: [cashAdvances.user_id],
+    references: [users.id],
+  }),
 }));
 
 export const travelApprovalsRelations = relations(travelApprovals, ({ one }) => ({

@@ -1,5 +1,6 @@
 import { db } from './db';
 import {
+  cashAdvances,
   reimbursementItems,
   reimbursements,
   travelApprovals,
@@ -68,8 +69,10 @@ const travelRequestSeeds = [
     start_date: new Date('2026-09-12T00:00:00Z'),
     end_date: new Date('2026-09-14T00:00:00Z'),
     purpose: 'Rapat strategis dengan tim sales nasional untuk membahas target quarter IV dan onboarding mitra baru.',
+    transportation_mode: 'Pesawat',
     document_url: 'https://example.com/docs/meeting-jakarta.pdf',
     status: 'COMPLETED',
+    lpj_completed_at: new Date('2026-09-20T00:00:00Z'),
   },
   {
     userEmail: 'budi.santoso@travel.local',
@@ -77,6 +80,7 @@ const travelRequestSeeds = [
     start_date: new Date('2026-09-18T00:00:00Z'),
     end_date: new Date('2026-09-21T00:00:00Z'),
     purpose: 'Visit pelanggan untuk demo platform operasional dan evaluasi integrasi solusi ERP.',
+    transportation_mode: 'Pesawat',
     document_url: 'https://example.com/docs/singapore-client-visit.pdf',
     status: 'FULFILLED',
   },
@@ -86,6 +90,7 @@ const travelRequestSeeds = [
     start_date: new Date('2026-10-02T00:00:00Z'),
     end_date: new Date('2026-10-05T00:00:00Z'),
     purpose: 'Pelatihan pengembangan SDM dan workshop manajemen talent untuk cabang regional.',
+    transportation_mode: 'Kereta Api',
     document_url: 'https://example.com/docs/hr-training-bali.pdf',
     status: 'APPROVED',
   },
@@ -95,6 +100,7 @@ const travelRequestSeeds = [
     start_date: new Date('2026-10-10T00:00:00Z'),
     end_date: new Date('2026-10-12T00:00:00Z'),
     purpose: 'Audit operasional wilayah tim sales dan koordinasi implementasi program promo bulan depan.',
+    transportation_mode: 'Mobil Kantor',
     document_url: 'https://example.com/docs/surabaya-audit.pdf',
     status: 'REJECTED',
   },
@@ -104,6 +110,7 @@ const travelRequestSeeds = [
     start_date: new Date('2026-10-15T00:00:00Z'),
     end_date: new Date('2026-10-16T00:00:00Z'),
     purpose: 'Pertemuan internal dengan tim produk untuk review kebutuhan fitur dan prioritas roadmap.',
+    transportation_mode: 'Travel',
     document_url: 'https://example.com/docs/bandung-roadmap.pdf',
     status: 'PENDING',
   },
@@ -162,7 +169,7 @@ const reimbursementSeeds = [
     travelIndex: 1,
     userEmail: 'budi.santoso@travel.local',
     total_amount: '11850000.00',
-    status: 'VERIFIED',
+    status: 'NEEDS_DOCUMENTS',
   },
   {
     travelIndex: 2,
@@ -238,9 +245,37 @@ const reimbursementItemSeeds = [
   },
 ] as const;
 
+const cashAdvanceSeeds = [
+  {
+    travelIndex: 0,
+    userEmail: 'alicia.putri@travel.local',
+    estimated_cost: '8500000.00',
+    requested_amount: '8000000.00',
+    returned_amount: '750000.00',
+    status: 'DISBURSED',
+  },
+  {
+    travelIndex: 1,
+    userEmail: 'budi.santoso@travel.local',
+    estimated_cost: '15000000.00',
+    requested_amount: '12000000.00',
+    returned_amount: '0.00',
+    status: 'DISBURSED',
+  },
+  {
+    travelIndex: 2,
+    userEmail: 'faris.hidayat@travel.local',
+    estimated_cost: '9000000.00',
+    requested_amount: '7000000.00',
+    returned_amount: '0.00',
+    status: 'WAITING_PAYMENT',
+  },
+] as const;
+
 async function resetTables() {
   await db.delete(reimbursementItems);
   await db.delete(reimbursements);
+  await db.delete(cashAdvances);
   await db.delete(travelFulfillments);
   await db.delete(travelApprovals);
   await db.delete(travelRequests);
@@ -268,17 +303,25 @@ async function seed() {
     start_date: travel.start_date,
     end_date: travel.end_date,
     purpose: travel.purpose,
+    transportation_mode: travel.transportation_mode,
     document_url: travel.document_url,
     status: travel.status,
+    lpj_completed_at: 'lpj_completed_at' in travel ? travel.lpj_completed_at : null,
   }));
 
   await db.insert(travelRequests).values(travelRecords);
 
   const createdTravelRequests = await db.select().from(travelRequests);
-  const travelMap = new Map(createdTravelRequests.map((travel) => [
-    `${travel.destination}-${travel.user_id}-${travel.start_date}`,
-    travel.id,
-  ]));
+  const cashAdvanceRecords = cashAdvanceSeeds.map((advance) => ({
+    travel_request_id: createdTravelRequests[advance.travelIndex].id,
+    user_id: userMap.get(advance.userEmail)!,
+    estimated_cost: advance.estimated_cost,
+    requested_amount: advance.requested_amount,
+    returned_amount: advance.returned_amount,
+    status: advance.status,
+  }));
+
+  await db.insert(cashAdvances).values(cashAdvanceRecords);
 
   const approvalRecords = approvalSeeds.map((approval) => ({
     travel_request_id: createdTravelRequests[approval.travelIndex].id,
@@ -339,7 +382,7 @@ async function seed() {
     await db.insert(reimbursementItems).values(reimbursementItemRecords);
   }
 
-  console.log('Seeded users, travel requests, approvals, fulfillments, reimbursements, and reimbursement items.');
+  console.log('Seeded users, travel requests, cash advances, approvals, fulfillments, reimbursements, and reimbursement items.');
 }
 
 seed().catch((error) => {

@@ -19,11 +19,37 @@ const reimbursementSchema = z.object({
 });
 
 const processSchema = z.object({
-  status: z.enum(['VERIFIED', 'PAID', 'REJECTED']),
+  status: z.enum(['NEEDS_DOCUMENTS', 'VERIFIED', 'PAID', 'REJECTED']),
   notes: z.string().optional(),
 });
 
+const reimbursementStatusLabels = {
+  SUBMITTED: 'Menunggu Verifikasi',
+  NEEDS_DOCUMENTS: 'Bukti Kurang',
+  VERIFIED: 'Terverifikasi',
+  PAID: 'Selesai',
+  REJECTED: 'Dikembalikan',
+} as const;
+
 reimbursementRoutes.use('*', authMiddleware);
+
+reimbursementRoutes.get('/my', async (c) => {
+  const user = c.get('user');
+  const records = await db.query.reimbursements.findMany({
+    where: eq(reimbursements.user_id, user.id),
+    with: {
+      travelRequest: true,
+      items: true,
+    },
+  });
+
+  return c.json({
+    reimbursements: records.map((record) => ({
+      ...record,
+      status_label: reimbursementStatusLabels[record.status],
+    })),
+  });
+});
 
 reimbursementRoutes.post('/:travelId', async (c) => {
   const user = c.get('user');
@@ -128,6 +154,7 @@ reimbursementRoutes.post('/:id/process', async (c) => {
     reimbursement: {
       id: record.id,
       status: parsed.data.status,
+      status_label: reimbursementStatusLabels[parsed.data.status],
       notes: parsed.data.notes || null,
     },
   });

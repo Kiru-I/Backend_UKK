@@ -43,7 +43,9 @@ src/
 - Persetujuan atau penolakan pengajuan oleh atasan
 - Pencatatan fulfillment travel oleh admin travel
 - Pengajuan reimburse dan proses verifikasi pembayaran
-- Dashboard statistik dan ringkasan pengeluaran
+- Pengajuan dan pencairan uang muka perjalanan dinas
+- Tracking LPJ, pengembalian sisa uang muka, dan kuota dinas tahunan
+- Dashboard statistik, ringkasan pengeluaran, dan ringkasan pribadi karyawan
 - Upload file dokumen perjalanan secara nyata
 
 ## Role yang tersedia
@@ -281,7 +283,10 @@ DELETE /api/users/:id
 POST /api/travels
 GET /api/travels/my-requests
 GET /api/travels/:id
+POST /api/travels/:id/lpj
 ```
+
+Pilihan `transportation_mode`: `Pesawat`, `Kereta Api`, `Travel`, atau `Mobil Kantor`. Field ini opsional untuk menjaga kompatibilitas request lama.
 
 ### Approval
 
@@ -319,6 +324,7 @@ Contoh body fulfillment:
 
 ```http
 POST /api/reimbursements/:travelId
+GET /api/reimbursements/my
 GET /api/reimbursements/pending
 POST /api/reimbursements/:id/process
 ```
@@ -338,12 +344,41 @@ Contoh item reimbursement:
 }
 ```
 
+### Uang muka
+
+```http
+POST /api/cash-advances
+GET /api/cash-advances/my
+GET /api/cash-advances/pending
+POST /api/cash-advances/:id/process
+POST /api/cash-advances/:id/settlement
+```
+
+Pengajuan uang muka hanya dapat dibuat untuk perjalanan yang sudah disetujui, dan jumlah yang diminta tidak boleh melebihi estimasi biaya. Finance atau Super Admin dapat mencairkan uang muka. Setelah perjalanan selesai, karyawan dapat melaporkan jumlah sisa yang dikembalikan.
+
+Body pengajuan:
+
+```json
+{
+  "travel_id": 1,
+  "estimated_cost": 8500000,
+  "requested_amount": 8000000
+}
+```
+
+Status uang muka: `WAITING_PAYMENT` (Menunggu Pembayaran) dan `DISBURSED` (Dicairkan).
+
 ### Dashboard
 
 ```http
 GET /api/dashboard/stats
 GET /api/dashboard/expenses
+GET /api/dashboard/my-summary
 ```
+
+`GET /api/dashboard/my-summary` menampilkan uang muka berjalan, total sisa uang muka yang dikembalikan, kuota perjalanan tahun berjalan (kuota tahunan 12 perjalanan), dan reminder LPJ/pengembalian. LPJ menjadi terlambat setelah lewat 7 hari kalender dari tanggal selesai perjalanan. Daftar `GET /api/travels/my-requests` juga memuat `lpj_status`, `lpj_due_date`, dan reminder.
+
+Untuk menandai LPJ selesai, karyawan pemilik perjalanan dapat memanggil `POST /api/travels/:id/lpj`.
 
 ## Contoh format response
 
@@ -529,6 +564,7 @@ Pilihan JSON:
   "start_date": "2026-09-12",
   "end_date": "2026-09-14",
   "purpose": "Rapat bisnis dengan tim regional",
+  "transportation_mode": "Pesawat",
   "document_url": "https://example.com/document.pdf"
 }
 ```
@@ -545,6 +581,7 @@ Response:
     "start_date": "2026-09-12",
     "end_date": "2026-09-14",
     "purpose": "Rapat bisnis dengan tim regional",
+    "transportation_mode": "Pesawat",
     "document_url": "http://localhost:3000/uploads/travel-documents/example.pdf",
     "status": "PENDING"
   }
@@ -564,6 +601,8 @@ Authorization: Bearer <token>
 GET /api/travels/:id
 Authorization: Bearer <token>
 ```
+
+Daftar perjalanan saya menyertakan `lpj_status`, `lpj_due_date`, dan reminder. Setelah perjalanan berakhir, karyawan pemilik perjalanan menandai LPJ selesai menggunakan `POST /api/travels/:id/lpj`.
 
 ### Lihat approval yang menunggu
 
@@ -655,6 +694,15 @@ GET /api/reimbursements/pending
 Authorization: Bearer <token>
 ```
 
+### Riwayat reimbursement saya
+
+```http
+GET /api/reimbursements/my
+Authorization: ******
+```
+
+Response berisi item, detail perjalanan, status internal, dan `status_label` berbahasa Indonesia. Endpoint hanya mengembalikan reimbursement milik pengguna yang sedang login. Label status: `SUBMITTED` (Menunggu Verifikasi), `NEEDS_DOCUMENTS` (Bukti Kurang), `VERIFIED` (Terverifikasi), `PAID` (Selesai), dan `REJECTED` (Dikembalikan).
+
 ### Proses reimbursement
 
 ```http
@@ -674,8 +722,29 @@ Body:
 Nilai status yang valid:
 
 - VERIFIED
+- NEEDS_DOCUMENTS
 - PAID
 - REJECTED
+
+### Ajukan dan lihat uang muka
+
+```http
+POST /api/cash-advances
+GET /api/cash-advances/my
+Authorization: ******
+```
+
+Body pengajuan:
+
+```json
+{
+  "travel_id": 1,
+  "estimated_cost": 8500000,
+  "requested_amount": 8000000
+}
+```
+
+Finance mencairkan uang muka dengan `POST /api/cash-advances/:id/process`. Setelah perjalanan berakhir, karyawan dapat melaporkan pengembalian dengan `POST /api/cash-advances/:id/settlement` dan body `{"returned_amount": 750000}`.
 
 ### Dashboard statistik
 
@@ -715,9 +784,18 @@ Response:
 }
 ```
 
+### Ringkasan pribadi karyawan
+
+```http
+GET /api/dashboard/my-summary
+Authorization: ******
+```
+
+Response mencakup `cash_advance_running`, `cash_advance_returned`, kuota `travel_quota` tahun berjalan (maksimal 12 perjalanan), dan daftar `reminders`.
+
 ## Catatan penting
 
-- Data seeder dibuat agar realistis untuk testing alur approval, reimbursement, dan fulfillment.
+- Seeder mengisi seluruh tabel aplikasi, termasuk users, travel requests, approvals, fulfillments, reimbursements, reimbursement items, dan cash advances.
 - File yang diupload disimpan di folder `uploads/` untuk kebutuhan development.
 - Untuk production, sebaiknya file dipindahkan ke penyimpanan cloud seperti S3, Cloudinary, atau Supabase Storage.
 
