@@ -51,11 +51,28 @@ src/
 
 ## Role yang tersedia
 
-- Karyawan
-- Atasan
-- Admin Travel
-- Tim Keuangan
-- Super Admin
+Role mengatur fitur yang dapat diakses pengguna pada API:
+
+- **Karyawan** — mengajukan perjalanan dinas, melihat pengajuan miliknya, melengkapi LPJ, mengajukan uang muka untuk perjalanan yang disetujui, dan mengajukan reimbursement.
+- **Atasan** — meninjau pengajuan perjalanan dan menyetujui atau menolaknya. Atasan juga dapat melihat dashboard statistik perjalanan.
+- **Admin Travel** — melihat pengajuan yang menunggu fulfillment dan mengisi detail transportasi serta akomodasi perjalanan. Admin Travel juga dapat melihat dashboard perjalanan dan pengeluaran.
+- **Tim Keuangan** — meninjau serta memproses pencairan uang muka dan reimbursement, termasuk memeriksa daftar pengajuan yang menunggu proses. Tim Keuangan dapat melihat dashboard pengeluaran.
+- **Super Admin** — mengelola akun pengguna (melihat, membuat, memperbarui, dan menghapus user) serta dapat mengakses proses persetujuan, fulfillment, dan keuangan. Super Admin juga dapat melihat dashboard.
+
+Hak akses tersebut diterapkan oleh endpoint API. Role tidak otomatis berarti semua data telah dibatasi berdasarkan perusahaan; pembatasan akses lintas perusahaan perlu diterapkan terpisah jika dibutuhkan.
+
+## Alur pengajuan perjalanan dinas
+
+Seluruh endpoint perjalanan di bawah memerlukan token login pada header `Authorization: Bearer <token>`.
+
+1. **Karyawan membuat pengajuan** — pengguna yang sudah login mengirim `POST /api/travels` beserta tujuan, tanggal mulai/selesai, keperluan, dan dokumen pendukung bila ada. Sistem mengaitkan pengajuan ke akun dari token dan menetapkan status awal `PENDING`. Saat ini endpoint pembuatan perjalanan tersedia untuk semua role yang sudah login; tidak ada pembatasan khusus role pada endpoint tersebut.
+2. **Atasan meninjau** — Atasan atau Super Admin melihat antrean pengajuan melalui `GET /api/approvals`, kemudian menyetujui atau menolak melalui `POST /api/approvals/:id/action`. Status menjadi `APPROVED` atau `REJECTED`.
+3. **Admin Travel mengatur perjalanan** — untuk pengajuan berstatus `APPROVED`, Admin Travel atau Super Admin melihat antrean melalui `GET /api/fulfillment/pending`, lalu mengisi detail transportasi dan akomodasi melalui `POST /api/fulfillment/:travelId`. Status berubah menjadi `FULFILLED`.
+4. **Karyawan mengurus uang muka dan perjalanan** — pemilik pengajuan dapat meminta uang muka untuk perjalanan berstatus `APPROVED` atau `FULFILLED` melalui `POST /api/cash-advances`. Tim Keuangan atau Super Admin memproses pencairan. Setelah perjalanan berakhir, karyawan dapat melaporkan sisa uang muka melalui endpoint settlement dan menandai LPJ selesai melalui `POST /api/travels/:id/lpj`.
+5. **Karyawan mengajukan reimbursement** — pemilik perjalanan mengirim bukti dan rincian biaya melalui `POST /api/reimbursements/:travelId`. Tim Keuangan atau Super Admin memeriksa dan memperbarui status reimbursement.
+6. **Melihat perkembangan** — karyawan melihat pengajuan sendiri melalui `GET /api/travels/my-requests`. Atasan dan Super Admin dapat melihat antrean persetujuan; Admin Travel dan Super Admin dapat melihat antrean fulfillment. Detail perjalanan juga dapat dilihat oleh pemilik, Atasan, Admin Travel, Tim Keuangan, dan Super Admin melalui `GET /api/travels/:id`.
+
+Status perjalanan bergerak melalui `PENDING` → `APPROVED` → `FULFILLED`; Atasan juga dapat menolak pengajuan menjadi `REJECTED`. Penyelesaian LPJ dicatat pada perjalanan, tetapi endpoint LPJ tidak mengubah status perjalanan menjadi `COMPLETED`.
 
 ## Persyaratan sebelum menjalankan
 
@@ -108,7 +125,36 @@ Isi data contoh / seeder:
 bun run seed
 ```
 
-Seeder mengosongkan data tabel aplikasi sebelum mengisinya kembali. Data uang muka contoh mencakup tiga pengajuan: dua berstatus `DISBURSED` (satu dengan pengembalian sebagian) dan satu berstatus `WAITING_PAYMENT`.
+Seeder menghapus data tabel aplikasi sebelum mengisinya kembali, lalu membuat 2 perusahaan, 10 pengguna per perusahaan (20 pengguna), dan 3 perjalanan per pengguna. Setiap perjalanan memiliki satu data uang muka dan satu reimbursement, sehingga totalnya masing-masing 60. Gunakan akun dummy di bawah untuk pengujian; kata sandi ini hanya untuk lingkungan development.
+
+### Akun dummy untuk pengujian
+
+| Nama | Email | Kata sandi | Role | Perusahaan | Departemen |
+|---|---|---|---|---|---|
+| Ayu Santoso | `user011@nuvixalpha2026.local` | `Password1!1` | Super Admin | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Engineering |
+| Budi Wijaya | `user021@nuvixalpha2026.local` | `Password1!2` | Atasan | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Finance |
+| Citra Rahmadani | `user031@nuvixalpha2026.local` | `Password1!3` | Atasan | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | HR |
+| Dimas Pratama | `user041@nuvixalpha2026.local` | `Password1!4` | Admin Travel | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Sales |
+| Eka Nugraha | `user051@nuvixalpha2026.local` | `Password1!5` | Admin Travel | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Operations |
+| Fajar Lestari | `user061@nuvixalpha2026.local` | `Password1!6` | Tim Keuangan | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Logistik |
+| Gita Hidayat | `user071@nuvixalpha2026.local` | `Password1!7` | Tim Keuangan | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Marketing |
+| Hendra Permata | `user081@nuvixalpha2026.local` | `Password1!8` | Karyawan | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Product |
+| Indra Ramadhan | `user091@nuvixalpha2026.local` | `Password1!9` | Karyawan | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | IT |
+| Jasmine Gunawan | `user101@nuvixalpha2026.local` | `Password1!10` | Karyawan | PT Nuvix Sentosa (`NUVIX-ALPHA-2026`) | Legal |
+| Ayu Wijaya | `user012@nuvixbeta2026.local` | `Password2!1` | Super Admin | PT Nuvix Global (`NUVIX-BETA-2026`) | Finance |
+| Budi Rahmadani | `user022@nuvixbeta2026.local` | `Password2!2` | Atasan | PT Nuvix Global (`NUVIX-BETA-2026`) | HR |
+| Citra Pratama | `user032@nuvixbeta2026.local` | `Password2!3` | Atasan | PT Nuvix Global (`NUVIX-BETA-2026`) | Sales |
+| Dimas Nugraha | `user042@nuvixbeta2026.local` | `Password2!4` | Admin Travel | PT Nuvix Global (`NUVIX-BETA-2026`) | Operations |
+| Eka Lestari | `user052@nuvixbeta2026.local` | `Password2!5` | Admin Travel | PT Nuvix Global (`NUVIX-BETA-2026`) | Logistik |
+| Fajar Hidayat | `user062@nuvixbeta2026.local` | `Password2!6` | Tim Keuangan | PT Nuvix Global (`NUVIX-BETA-2026`) | Marketing |
+| Gita Permata | `user072@nuvixbeta2026.local` | `Password2!7` | Tim Keuangan | PT Nuvix Global (`NUVIX-BETA-2026`) | Product |
+| Hendra Ramadhan | `user082@nuvixbeta2026.local` | `Password2!8` | Karyawan | PT Nuvix Global (`NUVIX-BETA-2026`) | IT |
+| Indra Gunawan | `user092@nuvixbeta2026.local` | `Password2!9` | Karyawan | PT Nuvix Global (`NUVIX-BETA-2026`) | Legal |
+| Jasmine Santoso | `user102@nuvixbeta2026.local` | `Password2!10` | Karyawan | PT Nuvix Global (`NUVIX-BETA-2026`) | Engineering |
+
+Login dengan `POST /api/auth/login` menggunakan email dan kata sandi pada tabel. Kode perusahaan tersebut juga dapat digunakan untuk menguji registrasi.
+
+Seluruh akun dummy pada tabel berstatus `ACTIVE`.
 
 Jalankan server:
 
@@ -133,22 +179,45 @@ Authorization: Bearer <jwt_token>
 ### Register
 
 ```http
-POST /api/auth/register
+POST /api/v1/auth/register
+Content-Type: application/json
 ```
 
 Body request:
 
 ```json
 {
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "secret123",
-  "department": "IT",
-  "role": "Karyawan"
+  "nama_lengkap": "Budi Santoso",
+  "nik": "1234567890",
+  "email_kantor": "budi@perusahaan.co.id",
+  "kode_perusahaan": "NUVIX-ALPHA-2026",
+  "departemen": "Engineering",
+  "kata_sandi": "Password123",
+  "konfirmasi_kata_sandi": "Password123",
+  "persetujuan_syarat": true
 }
 ```
 
-Contoh response:
+Response sukses registrasi:
+
+```json
+{
+  "success": true,
+  "message": "Pendaftaran berhasil. Akun Anda sedang menunggu verifikasi oleh admin perusahaan.",
+  "data": {
+    "user_id": "usr_21",
+    "nama_lengkap": "Budi Santoso",
+    "email_kantor": "budi@perusahaan.co.id",
+    "company_name": "PT Nuvix Sentosa",
+    "status": "PENDING_VERIFICATION"
+  }
+}
+```
+
+Kode perusahaan harus aktif dan dicocokkan tanpa membedakan huruf besar/kecil. Kata sandi minimal 8 karakter serta mengandung huruf dan angka. Akun baru berstatus `PENDING_VERIFICATION` dan tidak langsung menerima token. Path kompatibilitas `POST /api/auth/register` juga tersedia.
+
+<details>
+<summary>Response registrasi versi lama (sudah tidak berlaku)</summary>
 
 ```json
 {
@@ -163,6 +232,8 @@ Contoh response:
 }
 ```
 
+</details>
+
 ### Login
 
 ```http
@@ -173,8 +244,8 @@ Body request:
 
 ```json
 {
-  "email": "superadmin@travel.local",
-  "password": "superadmin123"
+  "email": "user011@nuvixalpha2026.local",
+  "password": "Password1!1"
 }
 ```
 
@@ -185,10 +256,10 @@ Contoh response:
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": 1,
-    "name": "Super Administrator",
-    "email": "superadmin@travel.local",
+    "name": "Ayu Santoso",
+    "email": "user011@nuvixalpha2026.local",
     "role": "Super Admin",
-    "department": "IT"
+    "department": "Engineering"
   }
 }
 ```
@@ -210,7 +281,7 @@ Body:
 
 ```json
 {
-  "password_saat_ini": "superadmin123",
+  "password_saat_ini": "Password1!1",
   "password_baru": "newsecret123",
   "konfirmasi_password_baru": "newsecret123"
 }
@@ -285,6 +356,7 @@ Kamu juga masih bisa mengirim URL file secara langsung seperti ini:
 ### Auth
 
 ```http
+POST /api/v1/auth/register
 POST /api/auth/register
 POST /api/auth/login
 GET /api/auth/me
@@ -481,18 +553,22 @@ Untuk menandai LPJ selesai, karyawan pemilik perjalanan dapat memanggil `POST /a
 ### Register
 
 ```http
-POST /api/auth/register
+POST /api/v1/auth/register
+Content-Type: application/json
 ```
 
 Body:
 
 ```json
 {
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "secret123",
-  "department": "IT",
-  "role": "Karyawan"
+  "nama_lengkap": "Budi Santoso",
+  "nik": "1234567890",
+  "email_kantor": "budi@perusahaan.co.id",
+  "kode_perusahaan": "NUVIX-ALPHA-2026",
+  "departemen": "Engineering",
+  "kata_sandi": "Password123",
+  "konfirmasi_kata_sandi": "Password123",
+  "persetujuan_syarat": true
 }
 ```
 
@@ -500,13 +576,14 @@ Response:
 
 ```json
 {
-  "token": "jwt_token_here",
-  "user": {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "role": "Karyawan",
-    "department": "IT"
+  "success": true,
+  "message": "Pendaftaran berhasil. Akun Anda sedang menunggu verifikasi oleh admin perusahaan.",
+  "data": {
+    "user_id": "usr_21",
+    "nama_lengkap": "Budi Santoso",
+    "email_kantor": "budi@perusahaan.co.id",
+    "company_name": "PT Nuvix Sentosa",
+    "status": "PENDING_VERIFICATION"
   }
 }
 ```
@@ -521,8 +598,8 @@ Body:
 
 ```json
 {
-  "email": "superadmin@travel.local",
-  "password": "superadmin123"
+  "email": "user011@nuvixalpha2026.local",
+  "password": "Password1!1"
 }
 ```
 
@@ -533,10 +610,10 @@ Response:
   "token": "jwt_token_here",
   "user": {
     "id": 1,
-    "name": "Super Administrator",
-    "email": "superadmin@travel.local",
+    "name": "Ayu Santoso",
+    "email": "user011@nuvixalpha2026.local",
     "role": "Super Admin",
-    "department": "IT"
+    "department": "Engineering"
   }
 }
 ```
@@ -553,10 +630,10 @@ Response:
 ```json
 {
   "id": 1,
-  "name": "Super Administrator",
-  "email": "superadmin@travel.local",
+  "name": "Ayu Santoso",
+  "email": "user011@nuvixalpha2026.local",
   "role": "Super Admin",
-  "department": "IT"
+  "department": "Engineering"
 }
 ```
 
@@ -571,7 +648,7 @@ Body:
 
 ```json
 {
-  "password_saat_ini": "superadmin123",
+  "password_saat_ini": "Password1!1",
   "password_baru": "newsecret123",
   "konfirmasi_password_baru": "newsecret123"
 }
@@ -892,7 +969,7 @@ Response mencakup `cash_advance_running`, `cash_advance_returned`, kuota `travel
 
 ## Catatan penting
 
-- Seeder mengisi seluruh tabel aplikasi, termasuk users, travel requests, approvals, fulfillments, reimbursements, reimbursement items, dan cash advances. Seeder menghapus data tabel tersebut terlebih dahulu, lalu membuat tiga contoh uang muka dengan status pencairan yang berbeda.
+- Seeder menghapus data tabel aplikasi terkait sebelum mengisi ulang data: 2 perusahaan, 20 pengguna (10 per perusahaan), 60 travel request (3 per pengguna), 60 uang muka, 60 reimbursement, dan 180 item reimbursement. Data ini hanya untuk development/pengujian; jalankan `bun run seed` hanya pada database yang boleh dikosongkan.
 - File yang diupload disimpan di folder `uploads/` untuk kebutuhan development.
 - Untuk production, sebaiknya file dipindahkan ke penyimpanan cloud seperti S3, Cloudinary, atau Supabase Storage.
 

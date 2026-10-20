@@ -2,292 +2,131 @@ import { asc } from 'drizzle-orm';
 import { db } from './db';
 import {
   cashAdvances,
+  companies,
   reimbursementItems,
   reimbursements,
-  travelApprovals,
-  travelFulfillments,
   travelRequests,
   users,
 } from './db/schema';
 import { hashPassword } from './lib/auth';
 
-const userSeeds = [
+const companySeeds = [
   {
-    name: 'Super Administrator',
-    email: 'superadmin@travel.local',
-    password: 'superadmin123',
-    role: 'Super Admin',
-    department: 'IT',
+    name: 'PT Nuvix Sentosa',
+    company_code: 'NUVIX-ALPHA-2026',
+    is_active: true,
   },
   {
-    name: 'Alicia Putri',
-    email: 'alicia.putri@travel.local',
-    password: 'Password123!',
-    role: 'Karyawan',
-    department: 'Sales',
+    name: 'PT Nuvix Global',
+    company_code: 'NUVIX-BETA-2026',
+    is_active: true,
   },
-  {
-    name: 'Budi Santoso',
-    email: 'budi.santoso@travel.local',
-    password: 'Password123!',
-    role: 'Karyawan',
-    department: 'Operations',
-  },
-  {
-    name: 'Citra Dewi',
-    email: 'citra.dewi@travel.local',
-    password: 'Password123!',
-    role: 'Atasan',
-    department: 'Sales',
-  },
-  {
-    name: 'Dimas Pratama',
-    email: 'dimas.pratama@travel.local',
-    password: 'Password123!',
-    role: 'Admin Travel',
-    department: 'Logistik',
-  },
-  {
-    name: 'Eka Rahma',
-    email: 'eka.rahma@travel.local',
-    password: 'Password123!',
-    role: 'Tim Keuangan',
-    department: 'Finance',
-  },
-  {
-    name: 'Faris Hidayat',
-    email: 'faris.hidayat@travel.local',
-    password: 'Password123!',
-    role: 'Karyawan',
-    department: 'Human Resources',
-  },
-] as const;
+];
 
-const travelRequestSeeds = [
-  {
-    userEmail: 'alicia.putri@travel.local',
-    destination: 'Jakarta',
-    start_date: new Date('2026-09-12T00:00:00Z'),
-    end_date: new Date('2026-09-14T00:00:00Z'),
-    purpose: 'Rapat strategis dengan tim sales nasional untuk membahas target quarter IV dan onboarding mitra baru.',
-    transportation_mode: 'Pesawat',
-    document_url: 'https://example.com/docs/meeting-jakarta.pdf',
-    status: 'COMPLETED',
-    lpj_completed_at: new Date('2026-09-20T00:00:00Z'),
-  },
-  {
-    userEmail: 'budi.santoso@travel.local',
-    destination: 'Singapore',
-    start_date: new Date('2026-09-18T00:00:00Z'),
-    end_date: new Date('2026-09-21T00:00:00Z'),
-    purpose: 'Visit pelanggan untuk demo platform operasional dan evaluasi integrasi solusi ERP.',
-    transportation_mode: 'Pesawat',
-    document_url: 'https://example.com/docs/singapore-client-visit.pdf',
-    status: 'FULFILLED',
-  },
-  {
-    userEmail: 'faris.hidayat@travel.local',
-    destination: 'Bali',
-    start_date: new Date('2026-10-02T00:00:00Z'),
-    end_date: new Date('2026-10-05T00:00:00Z'),
-    purpose: 'Pelatihan pengembangan SDM dan workshop manajemen talent untuk cabang regional.',
-    transportation_mode: 'Kereta Api',
-    document_url: 'https://example.com/docs/hr-training-bali.pdf',
-    status: 'APPROVED',
-  },
-  {
-    userEmail: 'alicia.putri@travel.local',
-    destination: 'Surabaya',
-    start_date: new Date('2026-10-10T00:00:00Z'),
-    end_date: new Date('2026-10-12T00:00:00Z'),
-    purpose: 'Audit operasional wilayah tim sales dan koordinasi implementasi program promo bulan depan.',
-    transportation_mode: 'Mobil Kantor',
-    document_url: 'https://example.com/docs/surabaya-audit.pdf',
-    status: 'REJECTED',
-  },
-  {
-    userEmail: 'budi.santoso@travel.local',
-    destination: 'Bandung',
-    start_date: new Date('2026-10-15T00:00:00Z'),
-    end_date: new Date('2026-10-16T00:00:00Z'),
-    purpose: 'Pertemuan internal dengan tim produk untuk review kebutuhan fitur dan prioritas roadmap.',
-    transportation_mode: 'Travel',
-    document_url: 'https://example.com/docs/bandung-roadmap.pdf',
-    status: 'PENDING',
-  },
-] as const;
+const departments = ['Engineering', 'Finance', 'HR', 'Sales', 'Operations', 'Logistik', 'Marketing', 'Product', 'IT', 'Legal'];
+const destinations = ['Jakarta', 'Bandung', 'Yogyakarta', 'Surabaya', 'Bali', 'Singapore', 'Bangkok', 'Medan', 'Makassar', 'Balikpapan', 'Semarang', 'Palembang'];
+const travelStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'FULFILLED', 'COMPLETED'] as const;
+const reimbursementStatuses = ['SUBMITTED', 'NEEDS_DOCUMENTS', 'VERIFIED', 'PAID', 'REJECTED'] as const;
+const cashAdvanceStatuses = ['WAITING_PAYMENT', 'DISBURSED'] as const;
+type UserRoleSeed = 'Karyawan' | 'Atasan' | 'Admin Travel' | 'Tim Keuangan' | 'Super Admin';
+type TransportationModeSeed = 'Pesawat' | 'Kereta Api' | 'Travel' | 'Mobil Kantor';
 
-const approvalSeeds = [
-  {
-    travelIndex: 0,
-    approverEmail: 'citra.dewi@travel.local',
-    status: 'APPROVED',
-    notes: 'Persetujuan diberikan setelah review tujuan bisnis dan anggaran perjalanan sesuai prioritas departemen.',
-  },
-  {
-    travelIndex: 1,
-    approverEmail: 'citra.dewi@travel.local',
-    status: 'APPROVED',
-    notes: 'Disetujui untuk kunjungan pelanggan penting dan kebutuhan komunikasi langsung dengan stakeholder.',
-  },
-  {
-    travelIndex: 2,
-    approverEmail: 'citra.dewi@travel.local',
-    status: 'APPROVED',
-    notes: 'Program pelatihan dinilai strategis untuk pengembangan tim HR dan kompetensi cabang.',
-  },
-  {
-    travelIndex: 3,
-    approverEmail: 'citra.dewi@travel.local',
-    status: 'REJECTED',
-    notes: 'Perjalanan ditolak karena jadwal audit tidak sesuai prioritas dan kapasitas internal saat ini.',
-  },
-] as const;
+function buildUserSeed(companyId: number, companyIndex: number, userIndex: number): {
+  company_id: number;
+  name: string;
+  email: string;
+  nik: string;
+  password: string;
+  role: UserRoleSeed;
+  department: string;
+  status: 'ACTIVE';
+} {
+  const firstNames = ['Ayu', 'Budi', 'Citra', 'Dimas', 'Eka', 'Fajar', 'Gita', 'Hendra', 'Indra', 'Jasmine'];
+  const lastNames = ['Santoso', 'Wijaya', 'Rahmadani', 'Pratama', 'Nugraha', 'Lestari', 'Hidayat', 'Permata', 'Ramadhan', 'Gunawan'];
+  const companyCode = companySeeds[companyIndex].company_code.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const role = userIndex === 0 ? 'Super Admin' : userIndex <= 2 ? 'Atasan' : userIndex <= 4 ? 'Admin Travel' : userIndex <= 6 ? 'Tim Keuangan' : 'Karyawan';
 
-const fulfillmentSeeds = [
-  {
-    travelIndex: 1,
-    adminEmail: 'dimas.pratama@travel.local',
-    transport_details: 'Garuda Indonesia GA-248, penerbangan Jakarta-Singapore, seat 2A. Boarding dari Terminal 2B, check-in pada 2026-09-17 pukul 14:30 WIB.',
-    accommodation_details: 'Hotel Marina Bay Sands, kamar superior dengan 2 malam menginap, breakfast included, check-in 2026-09-18.',
-  },
-  {
-    travelIndex: 0,
-    adminEmail: 'dimas.pratama@travel.local',
-    transport_details: 'Lion Air JT-310, penerbangan Bandung-Jakarta pulang pergi, ekonomi class, bagasi kabin 15 kg.',
-    accommodation_details: 'Hotel Grand Indonesia, 2 malam, room type deluxe, meeting room tersedia untuk 2 sesi internal.',
-  },
-] as const;
+  return {
+    company_id: companyId,
+    name: `${firstNames[userIndex]} ${lastNames[(userIndex + companyIndex) % lastNames.length]}`,
+    email: `user${String(userIndex + 1).padStart(2, '0')}${companyIndex + 1}@${companyCode}.local`,
+    nik: `320${String(companyIndex + 1).padStart(2, '0')}${String(userIndex + 1).padStart(3, '0')}${String((companyIndex + 1) * (userIndex + 3)).padStart(3, '0')}`,
+    password: `Password${companyIndex + 1}!${userIndex + 1}`,
+    role,
+    department: departments[(companyIndex + userIndex) % departments.length],
+    status: 'ACTIVE' as const,
+  };
+}
 
-const reimbursementSeeds = [
-  {
-    travelIndex: 0,
-    userEmail: 'alicia.putri@travel.local',
-    total_amount: '7250000.00',
-    status: 'PAID',
-  },
-  {
-    travelIndex: 1,
-    userEmail: 'budi.santoso@travel.local',
-    total_amount: '11850000.00',
-    status: 'NEEDS_DOCUMENTS',
-  },
-  {
-    travelIndex: 2,
-    userEmail: 'faris.hidayat@travel.local',
-    total_amount: '6400000.00',
-    status: 'SUBMITTED',
-  },
-] as const;
+function buildTravelSeed(userId: number, companyIndex: number, userIndex: number, requestIndex: number): {
+  user_id: number;
+  destination: string;
+  start_date: Date;
+  end_date: Date;
+  purpose: string;
+  transportation_mode: TransportationModeSeed;
+  document_url: string;
+  status: (typeof travelStatuses)[number];
+  lpj_completed_at: Date | null;
+} {
+  const destination = destinations[(companyIndex * 2 + userIndex + requestIndex) % destinations.length];
+  const startDate = new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 5 + userIndex, 0, 0, 0));
+  const endDate = new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 8 + userIndex + requestIndex, 0, 0, 0));
+  const transportationModes: TransportationModeSeed[] = ['Pesawat', 'Kereta Api', 'Travel', 'Mobil Kantor'];
 
-const reimbursementItemSeeds = [
-  {
-    reimbursementIndex: 0,
-    category: 'Transportasi',
-    amount: '2400000.00',
-    receipt_url: 'https://example.com/receipts/flight-jakarta.pdf',
-    description: 'Tiket pesawat pulang pergi dan biaya bagasi tambahan.',
-  },
-  {
-    reimbursementIndex: 0,
-    category: 'Akomodasi',
-    amount: '3100000.00',
-    receipt_url: 'https://example.com/receipts/hotel-jakarta.pdf',
-    description: 'Menginap 2 malam di hotel dekat lokasi rapat dengan layanan breakfast.',
-  },
-  {
-    reimbursementIndex: 0,
-    category: 'Makan & Kebutuhan Rapat',
-    amount: '1750000.00',
-    receipt_url: 'https://example.com/receipts/meeting-jakarta.pdf',
-    description: 'Biaya makan dan kebutuhan operasional selama sesi rapat.',
-  },
-  {
-    reimbursementIndex: 1,
-    category: 'Transportasi',
-    amount: '4300000.00',
-    receipt_url: 'https://example.com/receipts/flight-singapore.pdf',
-    description: 'Tiket pesawat dan biaya transfer bandara ke hotel.',
-  },
-  {
-    reimbursementIndex: 1,
-    category: 'Akomodasi',
-    amount: '5600000.00',
-    receipt_url: 'https://example.com/receipts/hotel-singapore.pdf',
-    description: 'Biaya kamar hotel untuk 3 malam selama kunjungan pelanggan.',
-  },
-  {
-    reimbursementIndex: 1,
-    category: 'Perjalanan Lokal',
-    amount: '1950000.00',
-    receipt_url: 'https://example.com/receipts/local-transport-singapore.pdf',
-    description: 'Taxi dan transportasi lokal untuk meeting dengan klien dan kantor cabang.',
-  },
-  {
-    reimbursementIndex: 2,
-    category: 'Transportasi',
-    amount: '2100000.00',
-    receipt_url: 'https://example.com/receipts/flight-bali.pdf',
-    description: 'Tiket pesawat pulang pergi untuk mengikuti pelatihan HR.',
-  },
-  {
-    reimbursementIndex: 2,
-    category: 'Akomodasi',
-    amount: '2800000.00',
-    receipt_url: 'https://example.com/receipts/hotel-bali.pdf',
-    description: 'Kamar deluxe untuk 3 malam selama program pelatihan.',
-  },
-  {
-    reimbursementIndex: 2,
-    category: 'Perlengkapan Workshop',
-    amount: '1500000.00',
-    receipt_url: 'https://example.com/receipts/workshop-bali.pdf',
-    description: 'Biaya workshop, materi training, dan kebutuhan operasional peserta.',
-  },
-] as const;
-
-const cashAdvanceSeeds = [
-  {
-    travelIndex: 0,
-    userEmail: 'alicia.putri@travel.local',
-    estimated_cost: '8500000.00',
-    requested_amount: '8000000.00',
-    returned_amount: '750000.00',
-    status: 'DISBURSED',
-  },
-  {
-    travelIndex: 1,
-    userEmail: 'budi.santoso@travel.local',
-    estimated_cost: '15000000.00',
-    requested_amount: '12000000.00',
-    returned_amount: '0.00',
-    status: 'DISBURSED',
-  },
-  {
-    travelIndex: 2,
-    userEmail: 'faris.hidayat@travel.local',
-    estimated_cost: '9000000.00',
-    requested_amount: '7000000.00',
-    returned_amount: '0.00',
-    status: 'WAITING_PAYMENT',
-  },
-] as const;
+  return {
+    user_id: userId,
+    destination,
+    start_date: startDate,
+    end_date: endDate,
+    purpose: `Kegiatan ${requestIndex + 1} untuk ${destination} dengan kebutuhan operasional dan koordinasi internal perusahaan.`,
+    transportation_mode: transportationModes[(userIndex + requestIndex + companyIndex) % transportationModes.length],
+    document_url: `https://example.com/docs/${companySeeds[companyIndex].company_code.toLowerCase()}-${userIndex + 1}-${requestIndex + 1}.pdf`,
+    status: travelStatuses[(userIndex + requestIndex + companyIndex) % travelStatuses.length],
+    lpj_completed_at: requestIndex % 2 === 0 ? new Date(Date.UTC(2026, 8 + companyIndex + requestIndex, 10 + userIndex, 0, 0, 0)) : null,
+  };
+}
 
 async function resetTables() {
   await db.delete(reimbursementItems);
   await db.delete(reimbursements);
   await db.delete(cashAdvances);
-  await db.delete(travelFulfillments);
-  await db.delete(travelApprovals);
   await db.delete(travelRequests);
   await db.delete(users);
+  await db.delete(companies);
 }
 
 async function seed() {
   await resetTables();
 
+  await db.insert(companies).values(companySeeds);
+  const companyRows = await db.select().from(companies);
+  const companyMap = new Map(companyRows.map((company) => [company.company_code, company.id]));
+
+  const generatedUsers: Array<{
+    company_id: number;
+    name: string;
+    email: string;
+    nik: string;
+    password: string;
+    role: UserRoleSeed;
+    department: string;
+    status: 'ACTIVE';
+  }> = [];
+
+  for (let companyIndex = 0; companyIndex < companySeeds.length; companyIndex += 1) {
+    const companyId = companyMap.get(companySeeds[companyIndex].company_code);
+    if (companyId === undefined) {
+      throw new Error(`Company ${companySeeds[companyIndex].company_code} not found after insertion.`);
+    }
+
+    for (let userIndex = 0; userIndex < 10; userIndex += 1) {
+      generatedUsers.push(buildUserSeed(companyId, companyIndex, userIndex));
+    }
+  }
+
   const userRecords = await Promise.all(
-    userSeeds.map(async (user) => ({
+    generatedUsers.map(async (user) => ({
       ...user,
       password_hash: await hashPassword(user.password),
     }))
@@ -295,95 +134,109 @@ async function seed() {
 
   await db.insert(users).values(userRecords);
 
-  const createdUsers = await db.select().from(users);
-  const userMap = new Map(createdUsers.map((user) => [user.email, user.id]));
+  const createdUsers = await db.select().from(users).orderBy(asc(users.id));
+  const travelRecords = [] as Array<{
+    user_id: number;
+    destination: string;
+    start_date: Date;
+    end_date: Date;
+    purpose: string;
+    transportation_mode: TransportationModeSeed;
+    document_url: string;
+    status: (typeof travelStatuses)[number];
+    lpj_completed_at: Date | null;
+  }>;
 
-  const travelRecords = travelRequestSeeds.map((travel) => ({
-    user_id: userMap.get(travel.userEmail)!,
-    destination: travel.destination,
-    start_date: travel.start_date,
-    end_date: travel.end_date,
-    purpose: travel.purpose,
-    transportation_mode: travel.transportation_mode,
-    document_url: travel.document_url,
-    status: travel.status,
-    lpj_completed_at: 'lpj_completed_at' in travel ? travel.lpj_completed_at : null,
-  }));
+  for (const user of createdUsers) {
+    const companyIndex = companyRows.findIndex((company) => company.id === user.company_id);
+    for (let requestIndex = 0; requestIndex < 3; requestIndex += 1) {
+      const travelSeed = buildTravelSeed(user.id, companyIndex, createdUsers.findIndex((currentUser) => currentUser.id === user.id) % 10, requestIndex);
+      travelRecords.push({
+        user_id: travelSeed.user_id,
+        destination: travelSeed.destination,
+        start_date: travelSeed.start_date,
+        end_date: travelSeed.end_date,
+        purpose: travelSeed.purpose,
+        transportation_mode: travelSeed.transportation_mode,
+        document_url: travelSeed.document_url,
+        status: travelSeed.status,
+        lpj_completed_at: travelSeed.lpj_completed_at,
+      });
+    }
+  }
 
   await db.insert(travelRequests).values(travelRecords);
 
   const createdTravelRequests = await db.select().from(travelRequests).orderBy(asc(travelRequests.id));
-  const cashAdvanceRecords = cashAdvanceSeeds.map((advance) => ({
-    travel_request_id: createdTravelRequests[advance.travelIndex].id,
-    user_id: userMap.get(advance.userEmail)!,
-    estimated_cost: advance.estimated_cost,
-    requested_amount: advance.requested_amount,
-    returned_amount: advance.returned_amount,
-    status: advance.status,
-  }));
+  const cashAdvanceRecords = [] as Array<{
+    travel_request_id: number;
+    user_id: number;
+    estimated_cost: string;
+    requested_amount: string;
+    returned_amount: string;
+    status: (typeof cashAdvanceStatuses)[number];
+  }>;
+  const reimbursementRecords = [] as Array<{
+    travel_request_id: number;
+    user_id: number;
+    total_amount: string;
+    status: (typeof reimbursementStatuses)[number];
+  }>;
+
+  for (let index = 0; index < createdTravelRequests.length; index += 1) {
+    const travelRequest = createdTravelRequests[index];
+    const user = createdUsers.find((item) => item.id === travelRequest.user_id)!;
+    const baseAmount = (index + 1) * 1500000;
+
+    cashAdvanceRecords.push({
+      travel_request_id: travelRequest.id,
+      user_id: user.id,
+      estimated_cost: String(baseAmount + 2000000),
+      requested_amount: String(baseAmount + 1500000),
+      returned_amount: String(index % 2 === 0 ? 300000 : 0),
+      status: cashAdvanceStatuses[index % cashAdvanceStatuses.length],
+    });
+
+    reimbursementRecords.push({
+      travel_request_id: travelRequest.id,
+      user_id: user.id,
+      total_amount: String(baseAmount + 3200000),
+      status: reimbursementStatuses[index % reimbursementStatuses.length],
+    });
+  }
 
   await db.insert(cashAdvances).values(cashAdvanceRecords);
-
-  const approvalRecords = approvalSeeds.map((approval) => ({
-    travel_request_id: createdTravelRequests[approval.travelIndex].id,
-    approver_id: userMap.get(approval.approverEmail)!,
-    status: approval.status,
-    notes: approval.notes,
-  }));
-
-  if (approvalRecords.length > 0) {
-    await db.insert(travelApprovals).values(approvalRecords);
-  }
-
-  const fulfillmentRecords = fulfillmentSeeds.map((fulfillment) => {
-    const travelRequest = createdTravelRequests[fulfillment.travelIndex];
-
-    return {
-      travel_request_id: travelRequest.id,
-      transport_details: fulfillment.transport_details,
-      accommodation_details: fulfillment.accommodation_details,
-      admin_id: userMap.get(fulfillment.adminEmail)!,
-    };
-  });
-
-  if (fulfillmentRecords.length > 0) {
-    await db.insert(travelFulfillments).values(fulfillmentRecords);
-  }
-
-  const reimbursementRecords = reimbursementSeeds.map((reimbursement) => {
-    const travelRequest = createdTravelRequests[reimbursement.travelIndex];
-
-    return {
-      travel_request_id: travelRequest.id,
-      user_id: userMap.get(reimbursement.userEmail)!,
-      total_amount: reimbursement.total_amount,
-      status: reimbursement.status,
-    };
-  });
-
-  if (reimbursementRecords.length > 0) {
-    await db.insert(reimbursements).values(reimbursementRecords);
-  }
+  await db.insert(reimbursements).values(reimbursementRecords);
 
   const createdReimbursements = await db.select().from(reimbursements).orderBy(asc(reimbursements.id));
+  const reimbursementItemRecords = [] as Array<{
+    reimbursement_id: number;
+    category: string;
+    amount: string;
+    receipt_url: string;
+    description: string;
+  }>;
 
-  const reimbursementItemRecords = reimbursementItemSeeds.map((item) => {
-    const reimbursement = createdReimbursements[item.reimbursementIndex];
+  for (let index = 0; index < createdReimbursements.length; index += 1) {
+    const reimbursement = createdReimbursements[index];
+    const itemCategories = ['Transportasi', 'Akomodasi', 'Makan'];
 
-    return {
-      reimbursement_id: reimbursement.id,
-      category: item.category,
-      amount: item.amount,
-      receipt_url: item.receipt_url,
-      description: item.description,
-    };
-  });
+    itemCategories.forEach((category, itemIndex) => {
+      reimbursementItemRecords.push({
+        reimbursement_id: reimbursement.id,
+        category,
+        amount: String((index + 1) * 1200000 + (itemIndex + 1) * 350000),
+        receipt_url: `https://example.com/receipts/${reimbursement.id}-${category.toLowerCase().replace(/\s+/g, '-')}.pdf`,
+        description: `Pembiayaan ${category.toLowerCase()} untuk perjalanan kerja nomor ${index + 1}.`,
+      });
+    });
+  }
 
   if (reimbursementItemRecords.length > 0) {
     await db.insert(reimbursementItems).values(reimbursementItemRecords);
   }
 
-  console.log('Seeded users, travel requests, cash advances, approvals, fulfillments, reimbursements, and reimbursement items.');
+  console.log('Seeded 2 companies, 20 users, and 60 travel requests with cash advances and reimbursements.');
 }
 
 seed().catch((error) => {

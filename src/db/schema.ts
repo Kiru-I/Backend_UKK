@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  boolean,
   date,
   decimal,
   int,
@@ -11,6 +12,7 @@ import {
 } from 'drizzle-orm/mysql-core';
 
 export const userRoles = ['Karyawan', 'Atasan', 'Admin Travel', 'Tim Keuangan', 'Super Admin'] as const;
+export const userStatuses = ['PENDING_VERIFICATION', 'ACTIVE', 'REJECTED'] as const;
 export const travelStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'FULFILLED', 'COMPLETED'] as const;
 export const approvalStatuses = ['APPROVED', 'REJECTED'] as const;
 export const reimbursementStatuses = ['SUBMITTED', 'NEEDS_DOCUMENTS', 'VERIFIED', 'PAID', 'REJECTED'] as const;
@@ -18,6 +20,7 @@ export const transportationModes = ['Pesawat', 'Kereta Api', 'Travel', 'Mobil Ka
 export const cashAdvanceStatuses = ['WAITING_PAYMENT', 'DISBURSED'] as const;
 
 export const roleEnum = mysqlEnum('role', userRoles);
+export const userStatusEnum = mysqlEnum('status', userStatuses);
 export const travelStatusEnum = mysqlEnum('status', travelStatuses);
 export const approvalStatusEnum = mysqlEnum('status', approvalStatuses);
 export const reimbursementStatusEnum = mysqlEnum('status', reimbursementStatuses);
@@ -25,19 +28,32 @@ export const transportationModeEnum = mysqlEnum('transportation_mode', transport
 export const cashAdvanceStatusEnum = mysqlEnum('status', cashAdvanceStatuses);
 
 export type UserRole = (typeof userRoles)[number];
+export type UserStatus = (typeof userStatuses)[number];
 export type TravelStatus = (typeof travelStatuses)[number];
 export type ApprovalStatus = (typeof approvalStatuses)[number];
 export type ReimbursementStatus = (typeof reimbursementStatuses)[number];
 export type TransportationMode = (typeof transportationModes)[number];
 export type CashAdvanceStatus = (typeof cashAdvanceStatuses)[number];
 
-export const users = mysqlTable('users', {
+export const companies = mysqlTable('companies', {
   id: int('id').autoincrement().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
+  company_code: varchar('company_code', { length: 100 }).notNull().unique(),
+  is_active: boolean('is_active').notNull().default(true),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+  updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
+});
+
+export const users = mysqlTable('users', {
+  id: int('id').autoincrement().primaryKey(),
+  company_id: int('company_id').references(() => companies.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
+  nik: varchar('nik', { length: 50 }),
   password_hash: varchar('password_hash', { length: 255 }).notNull(),
   role: roleEnum.notNull(),
   department: varchar('department', { length: 255 }).notNull(),
+  status: userStatusEnum.notNull().default('PENDING_VERIFICATION'),
   created_at: timestamp('created_at').defaultNow().notNull(),
   updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
 });
@@ -106,7 +122,15 @@ export const reimbursementItems = mysqlTable('reimbursement_items', {
   created_at: timestamp('created_at').defaultNow().notNull(),
 });
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const companiesRelations = relations(companies, ({ many }) => ({
+  users: many(users),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [users.company_id],
+    references: [companies.id],
+  }),
   travelRequests: many(travelRequests),
   cashAdvances: many(cashAdvances),
   approvals: many(travelApprovals),

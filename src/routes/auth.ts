@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { db } from '../db';
-import { users } from '../db/schema';
+import { companies, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { comparePassword, hashPassword, signToken } from '../lib/auth';
 
@@ -20,59 +20,122 @@ const changePasswordSchema = z.object({
 });
 
 const registerSchema = z.object({
-  name: z.string().min(2),
-  email: z.string().email(),
-  password: z.string().min(6),
-  department: z.string().min(2),
-  role: z.enum(['Karyawan', 'Atasan', 'Admin Travel', 'Tim Keuangan', 'Super Admin']).optional().default('Karyawan'),
-});
+  nama_lengkap: z.string().trim().min(2),
+  nik: z.string().trim().min(4),
+  email_kantor: z.string().trim().email(),
+  kode_perusahaan: z.string().trim().min(3),
+  departemen: z.string().trim().min(2),
+  kata_sandi: z.string().min(8).regex(/^(?=.*[A-Za-z])(?=.*\d).*$/),
+  konfirmasi_kata_sandi: z.string().min(8),
+  persetujuan_syarat: z.boolean(),
+}).passthrough();
 
 authRoutes.post('/register', async (c) => {
   const body = await c.req.json().catch(() => null);
 
-  if (!body) {
-    return c.json({ error: 'Bad Request', message: 'Request body is required.' }, 400);
+  if (!body || typeof body !== 'object') {
+    return c.json({ success: false, message: 'Request body is required.', error_code: 'INVALID_REQUEST' }, 400);
   }
 
-  const parsed = registerSchema.safeParse(body);
+  const normalizedBody = {
+    ...body,
+    nama_lengkap: typeof body.nama_lengkap === 'string' ? body.nama_lengkap : body.name,
+    nik: typeof body.nik === 'string' ? body.nik : body.nik_number,
+    email_kantor: typeof body.email_kantor === 'string' ? body.email_kantor : body.email,
+    kode_perusahaan: typeof body.kode_perusahaan === 'string' ? body.kode_perusahaan : body.company_code,
+    departemen: typeof body.departemen === 'string' ? body.departemen : body.department,
+    kata_sandi: typeof body.kata_sandi === 'string' ? body.kata_sandi : body.password,
+    konfirmasi_kata_sandi: typeof body.konfirmasi_kata_sandi === 'string' ? body.konfirmasi_kata_sandi : body.confirm_password,
+    persetujuan_syarat: body.persetujuan_syarat ?? body.terms_accepted ?? false,
+  };
+
+  const parsed = registerSchema.safeParse(normalizedBody);
   if (!parsed.success) {
-    return c.json({ error: 'Validation Error', details: parsed.error.flatten() }, 400);
+    return c.json({
+      success: false,
+      message: 'Format data tidak valid. Mohon periksa kembali field yang Anda kirim.',
+      error_code: 'VALIDATION_ERROR',
+      details: parsed.error.flatten(),
+    }, 400);
   }
 
-  const { name, email, password, department, role } = parsed.data;
-  const [existingUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const {
+    nama_lengkap,
+    nik,
+    email_kantor,
+    kode_perusahaan,
+    departemen,
+    kata_sandi,
+    konfirmasi_kata_sandi,
+    persetujuan_syarat,
+  } = parsed.data;
+
+  if (kata_sandi !== konfirmasi_kata_sandi) {
+    return c.json({
+      success: false,
+      message: 'Kata sandi dan konfirmasi kata sandi tidak sesuai.',
+      error_code: 'PASSWORD_MISMATCH',
+    }, 400);
+  }
+
+  if (persetujuan_syarat !== true) {
+    return c.json({
+      success: false,
+      message: 'Anda harus menyetujui syarat dan ketentuan sebelum mendaftar.',
+      error_code: 'TERMS_NOT_ACCEPTED',
+    }, 400);
+  }
+
+  const companyList = await db.select().from(companies);
+  const company = companyList.find((item) => item.company_code.toLowerCase() === kode_perusahaan.trim().toLowerCase() && item.is_active);
+
+  if (!company) {
+    return c.json({
+      success: false,
+      message: 'Kode perusahaan tidak valid. Silakan tanyakan kode perusahaan resmi kepada atasan atau admin HR Anda.',
+      error_code: 'INVALID_COMPANY_CODE',
+    }, 400);
+  }
+
+  const normalizedEmail = email_kantor.trim().toLowerCase();
+  const normalizedNik = nik.trim();
+  const [existingUser] = await db.select().from(users)
+    .where(and(eq(users.company_id, company.id), or(eq(users.email, normalizedEmail), eq(users.nik, normalizedNik))))
+    .limit(1);
 
   if (existingUser) {
-    return c.json({ error: 'Conflict', message: 'A user with this email already exists.' }, 409);
+    return c.json({
+      success: false,
+      message: 'Email kantor atau NIK sudah terdaftar.',
+      error_code: 'DUPLICATE_USER',
+    }, 409);
   }
 
-  const passwordHash = await hashPassword(password);
+  const passwordHash = await hashPassword(kata_sandi);
   const [created] = await db.insert(users).values([
     {
-      name,
-      email,
+      company_id: company.id,
+      name: nama_lengkap.trim(),
+      email: normalizedEmail,
+      nik: normalizedNik,
       password_hash: passwordHash,
-      role,
-      department,
+      role: 'Karyawan',
+      department: departemen.trim(),
+      status: 'PENDING_VERIFICATION',
     },
   ]);
 
   const userId = Number(created.insertId);
-  const token = await signToken({
-    id: userId,
-    email,
-    name,
-    role,
-  });
 
   return c.json({
-    token,
-    user: {
-      id: userId,
-      name,
-      email,
-      role,
-      department,
+    success: true,
+    message: 'Pendaftaran berhasil. Akun Anda sedang menunggu verifikasi oleh admin perusahaan.',
+    data: {
+      user_id: `usr_${userId}`,
+      nama_lengkap: nama_lengkap.trim(),
+      email_kantor: normalizedEmail,
+      company_name: company.name,
+      status: 'PENDING_VERIFICATION',
     },
   }, 201);
 });

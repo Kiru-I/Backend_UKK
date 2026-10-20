@@ -31,6 +31,7 @@ app.get('/uploads/*', async (c) => {
 });
 
 app.route('/api/auth', authRoutes);
+app.route('/api/v1/auth', authRoutes);
 app.route('/api/users', usersRoutes);
 app.route('/api/travels', travelRoutes);
 app.route('/api/approvals', approvalRoutes);
