@@ -1,3 +1,4 @@
+import { asc } from 'drizzle-orm';
 import { db } from './db';
 import {
   cashAdvances,
@@ -311,7 +312,7 @@ async function seed() {
 
   await db.insert(travelRequests).values(travelRecords);
 
-  const createdTravelRequests = await db.select().from(travelRequests);
+  const createdTravelRequests = await db.select().from(travelRequests).orderBy(asc(travelRequests.id));
   const cashAdvanceRecords = cashAdvanceSeeds.map((advance) => ({
     travel_request_id: createdTravelRequests[advance.travelIndex].id,
     user_id: userMap.get(advance.userEmail)!,
@@ -364,7 +365,7 @@ async function seed() {
     await db.insert(reimbursements).values(reimbursementRecords);
   }
 
-  const createdReimbursements = await db.select().from(reimbursements);
+  const createdReimbursements = await db.select().from(reimbursements).orderBy(asc(reimbursements.id));
 
   const reimbursementItemRecords = reimbursementItemSeeds.map((item) => {
     const reimbursement = createdReimbursements[item.reimbursementIndex];

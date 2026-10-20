@@ -27,6 +27,7 @@ src/
   routes/
     approval.ts
     auth.ts
+    cash-advance.ts
     dashboard.ts
     fulfillment.ts
     reimbursement.ts
@@ -106,6 +107,8 @@ Isi data contoh / seeder:
 ```bash
 bun run seed
 ```
+
+Seeder mengosongkan data tabel aplikasi sebelum mengisinya kembali. Data uang muka contoh mencakup tiga pengajuan: dua berstatus `DISBURSED` (satu dengan pengembalian sebagian) dan satu berstatus `WAITING_PAYMENT`.
 
 Jalankan server:
 
@@ -196,6 +199,25 @@ Contoh response:
 GET /api/auth/me
 ```
 
+### Ganti password
+
+```http
+POST /api/auth/change-password
+Authorization: Bearer <token>
+```
+
+Body:
+
+```json
+{
+  "password_saat_ini": "superadmin123",
+  "password_baru": "newsecret123",
+  "konfirmasi_password_baru": "newsecret123"
+}
+```
+
+Password saat ini harus benar. Password baru minimal 6 karakter, berbeda dari password saat ini, dan harus cocok dengan konfirmasinya.
+
 ## Base URL API
 
 ```text
@@ -266,6 +288,7 @@ Kamu juga masih bisa mengirim URL file secara langsung seperti ini:
 POST /api/auth/register
 POST /api/auth/login
 GET /api/auth/me
+POST /api/auth/change-password
 ```
 
 ### User
@@ -325,8 +348,48 @@ Contoh body fulfillment:
 ```http
 POST /api/reimbursements/:travelId
 GET /api/reimbursements/my
+GET /api/reimbursements
 GET /api/reimbursements/pending
 POST /api/reimbursements/:id/process
+```
+
+`GET /api/reimbursements` hanya dapat diakses oleh Tim Keuangan dan Super Admin. Endpoint mengembalikan semua reimbursement tanpa memfilter status, beserta data user (tanpa hash password), perjalanan, item, dan `status_label`. Status yang dikembalikan mencakup `SUBMITTED` (Menunggu Verifikasi), `NEEDS_DOCUMENTS` (Bukti Kurang), `VERIFIED` (Terverifikasi), `PAID` (Selesai), dan `REJECTED` (Dikembalikan).
+
+Contoh ringkas bentuk respons:
+
+```json
+{
+  "reimbursements": [
+    {
+      "id": 1,
+      "user_id": 2,
+      "travel_request_id": 1,
+      "total_amount": "7250000.00",
+      "status": "PAID",
+      "status_label": "Selesai",
+      "user": {
+        "id": 2,
+        "name": "Alicia Putri",
+        "email": "alicia.putri@travel.local",
+        "role": "Karyawan",
+        "department": "Sales"
+      },
+      "travelRequest": {
+        "id": 1,
+        "destination": "Jakarta",
+        "status": "COMPLETED"
+      },
+      "items": [
+        {
+          "id": 1,
+          "category": "Transportasi",
+          "amount": "2400000.00",
+          "receipt_url": "https://example.com/receipts/flight-jakarta.pdf"
+        }
+      ]
+    }
+  ]
+}
 ```
 
 Contoh item reimbursement:
@@ -494,6 +557,31 @@ Response:
   "email": "superadmin@travel.local",
   "role": "Super Admin",
   "department": "IT"
+}
+```
+
+### Ganti password
+
+```http
+POST /api/auth/change-password
+Authorization: ******
+```
+
+Body:
+
+```json
+{
+  "password_saat_ini": "superadmin123",
+  "password_baru": "newsecret123",
+  "konfirmasi_password_baru": "newsecret123"
+}
+```
+
+Password saat ini wajib cocok dengan akun yang sedang login. Password baru minimal 6 karakter, tidak boleh sama dengan password saat ini, dan harus cocok dengan konfirmasinya. Jika berhasil, endpoint mengembalikan:
+
+```json
+{
+  "message": "Password changed successfully."
 }
 ```
 
@@ -694,6 +782,15 @@ GET /api/reimbursements/pending
 Authorization: Bearer <token>
 ```
 
+### Lihat seluruh riwayat reimbursement (Tim Keuangan / Super Admin)
+
+```http
+GET /api/reimbursements
+Authorization: ******
+```
+
+Response berisi seluruh status reimbursement, data user, detail perjalanan, item bukti, dan `status_label` berbahasa Indonesia. Data user tidak mencakup hash password.
+
 ### Riwayat reimbursement saya
 
 ```http
@@ -795,7 +892,7 @@ Response mencakup `cash_advance_running`, `cash_advance_returned`, kuota `travel
 
 ## Catatan penting
 
-- Seeder mengisi seluruh tabel aplikasi, termasuk users, travel requests, approvals, fulfillments, reimbursements, reimbursement items, dan cash advances.
+- Seeder mengisi seluruh tabel aplikasi, termasuk users, travel requests, approvals, fulfillments, reimbursements, reimbursement items, dan cash advances. Seeder menghapus data tabel tersebut terlebih dahulu, lalu membuat tiga contoh uang muka dengan status pencairan yang berbeda.
 - File yang diupload disimpan di folder `uploads/` untuk kebutuhan development.
 - Untuk production, sebaiknya file dipindahkan ke penyimpanan cloud seperti S3, Cloudinary, atau Supabase Storage.
 

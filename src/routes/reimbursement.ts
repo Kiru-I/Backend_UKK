@@ -33,6 +33,32 @@ const reimbursementStatusLabels = {
 
 reimbursementRoutes.use('*', authMiddleware);
 
+reimbursementRoutes.get('/', async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'Tim Keuangan' && user.role !== 'Super Admin') {
+    return c.json({ error: 'Forbidden', message: 'Only finance team can access all reimbursements.' }, 403);
+  }
+
+  const records = await db.query.reimbursements.findMany({
+    with: {
+      user: {
+        columns: {
+          password_hash: false,
+        },
+      },
+      travelRequest: true,
+      items: true,
+    },
+  });
+
+  return c.json({
+    reimbursements: records.map((record) => ({
+      ...record,
+      status_label: reimbursementStatusLabels[record.status],
+    })),
+  });
+});
+
 reimbursementRoutes.get('/my', async (c) => {
   const user = c.get('user');
   const records = await db.query.reimbursements.findMany({

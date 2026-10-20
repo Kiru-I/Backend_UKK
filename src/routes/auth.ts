@@ -13,6 +13,12 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
+const changePasswordSchema = z.object({
+  password_saat_ini: z.string().min(6),
+  password_baru: z.string().min(6),
+  konfirmasi_password_baru: z.string().min(6),
+});
+
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
@@ -130,6 +136,42 @@ authRoutes.get('/me', authMiddleware, async (c) => {
     role: record.role,
     department: record.department,
   });
+});
+
+authRoutes.post('/change-password', authMiddleware, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body) {
+    return c.json({ error: 'Bad Request', message: 'Request body is required.' }, 400);
+  }
+
+  const parsed = changePasswordSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation Error', details: parsed.error.flatten() }, 400);
+  }
+
+  if (parsed.data.password_baru !== parsed.data.konfirmasi_password_baru) {
+    return c.json({ error: 'Bad Request', message: 'New password confirmation does not match.' }, 400);
+  }
+
+  if (parsed.data.password_saat_ini === parsed.data.password_baru) {
+    return c.json({ error: 'Bad Request', message: 'New password must be different from the current password.' }, 400);
+  }
+
+  const user = c.get('user');
+  const [record] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+  if (!record) {
+    return c.json({ error: 'Not Found', message: 'User was not found.' }, 404);
+  }
+
+  const isValid = await comparePassword(parsed.data.password_saat_ini, record.password_hash);
+  if (!isValid) {
+    return c.json({ error: 'Bad Request', message: 'Current password is incorrect.' }, 400);
+  }
+
+  const passwordHash = await hashPassword(parsed.data.password_baru);
+  await db.update(users).set({ password_hash: passwordHash }).where(eq(users.id, user.id));
+
+  return c.json({ message: 'Password changed successfully.' });
 });
 
 export default authRoutes;
