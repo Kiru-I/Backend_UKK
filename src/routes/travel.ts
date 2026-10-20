@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { mkdir } from 'node:fs/promises';
 import { db } from '../db';
 import { cashAdvances, transportationModes, travelRequests, travelApprovals } from '../db/schema';
@@ -37,6 +37,10 @@ travelRoutes.use('*', authMiddleware);
 
 travelRoutes.post('/', async (c) => {
   const user = c.get('user');
+  if (user.role !== 'Karyawan') {
+    return c.json({ error: 'Forbidden', message: 'Only employees can submit travel requests.' }, 403);
+  }
+
   const contentType = c.req.header('Content-Type') || '';
 
   let destination = '';
@@ -180,22 +184,51 @@ travelRoutes.post('/:id/lpj', async (c) => {
   if (request.user_id !== user.id) {
     return c.json({ error: 'Forbidden', message: 'You can only complete LPJ for your own travel.' }, 403);
   }
+  if (request.status !== 'FULFILLED' && request.status !== 'COMPLETED') {
+    return c.json({ error: 'Bad Request', message: 'LPJ can only be completed for fulfilled trips.' }, 400);
+  }
   if (new Date(request.end_date) > new Date()) {
     return c.json({ error: 'Bad Request', message: 'LPJ can only be completed after the trip ends.' }, 400);
   }
 
   const completedAt = request.lpj_completed_at || new Date();
-  if (!request.lpj_completed_at) {
-    await db.update(travelRequests)
+  const finalStatus = await db.transaction(async (tx) => {
+    await tx.update(travelRequests)
       .set({ lpj_completed_at: completedAt })
       .where(eq(travelRequests.id, id));
-  }
+
+    if (request.status === 'COMPLETED') {
+      return 'COMPLETED' as const;
+    }
+
+    const pendingAdvances = await tx.select({ id: cashAdvances.id }).from(cashAdvances)
+      .where(and(
+        eq(cashAdvances.travel_request_id, id),
+        eq(cashAdvances.status, 'WAITING_PAYMENT'),
+      ));
+
+    if (pendingAdvances.length > 0) {
+      return 'FULFILLED' as const;
+    }
+
+    await tx.update(travelRequests)
+      .set({ status: 'COMPLETED', updated_at: new Date() })
+      .where(and(
+        eq(travelRequests.id, id),
+        eq(travelRequests.status, 'FULFILLED'),
+      ));
+
+    return 'COMPLETED' as const;
+  });
 
   return c.json({
-    message: 'LPJ marked as completed.',
+    message: finalStatus === 'COMPLETED'
+      ? 'LPJ marked as completed and travel request completed.'
+      : 'LPJ recorded. Travel request will be completed after all cash advances are disbursed.',
     travel_id: id,
     lpj_status: 'Selesai',
     lpj_completed_at: completedAt,
+    status: finalStatus,
   });
 });
 

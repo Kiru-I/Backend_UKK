@@ -70,8 +70,13 @@ function buildTravelSeed(userId: number, companyIndex: number, userIndex: number
   lpj_completed_at: Date | null;
 } {
   const destination = destinations[(companyIndex * 2 + userIndex + requestIndex) % destinations.length];
-  const startDate = new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 5 + userIndex, 0, 0, 0));
-  const endDate = new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 8 + userIndex + requestIndex, 0, 0, 0));
+  const status = travelStatuses[(userIndex + requestIndex + companyIndex) % travelStatuses.length];
+  const startDate = status === 'COMPLETED'
+    ? new Date(Date.UTC(2026, 1, 5 + userIndex, 0, 0, 0))
+    : new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 5 + userIndex, 0, 0, 0));
+  const endDate = status === 'COMPLETED'
+    ? new Date(Date.UTC(2026, 1, 7 + userIndex, 0, 0, 0))
+    : new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 8 + userIndex + requestIndex, 0, 0, 0));
   const transportationModes: TransportationModeSeed[] = ['Pesawat', 'Kereta Api', 'Travel', 'Mobil Kantor'];
 
   return {
@@ -82,8 +87,10 @@ function buildTravelSeed(userId: number, companyIndex: number, userIndex: number
     purpose: `Kegiatan ${requestIndex + 1} untuk ${destination} dengan kebutuhan operasional dan koordinasi internal perusahaan.`,
     transportation_mode: transportationModes[(userIndex + requestIndex + companyIndex) % transportationModes.length],
     document_url: `https://example.com/docs/${companySeeds[companyIndex].company_code.toLowerCase()}-${userIndex + 1}-${requestIndex + 1}.pdf`,
-    status: travelStatuses[(userIndex + requestIndex + companyIndex) % travelStatuses.length],
-    lpj_completed_at: requestIndex % 2 === 0 ? new Date(Date.UTC(2026, 8 + companyIndex + requestIndex, 10 + userIndex, 0, 0, 0)) : null,
+    status,
+    lpj_completed_at: status === 'COMPLETED' || requestIndex % 2 === 0
+      ? new Date(Date.UTC(2026, status === 'COMPLETED' ? 2 : 8 + companyIndex + requestIndex, 10 + userIndex, 0, 0, 0))
+      : null,
   };
 }
 
@@ -194,7 +201,9 @@ async function seed() {
       estimated_cost: String(baseAmount + 2000000),
       requested_amount: String(baseAmount + 1500000),
       returned_amount: String(index % 2 === 0 ? 300000 : 0),
-      status: cashAdvanceStatuses[index % cashAdvanceStatuses.length],
+      status: travelRequest.status === 'COMPLETED'
+        ? 'DISBURSED'
+        : cashAdvanceStatuses[index % cashAdvanceStatuses.length],
     });
 
     reimbursementRecords.push({

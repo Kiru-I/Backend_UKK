@@ -43,8 +43,8 @@ cashAdvanceRoutes.post('/', async (c) => {
     return c.json({ error: 'Not Found', message: 'Your travel request was not found.' }, 404);
   }
 
-  if (travelRequest.status !== 'APPROVED' && travelRequest.status !== 'FULFILLED') {
-    return c.json({ error: 'Bad Request', message: 'Cash advances can only be requested for approved trips.' }, 400);
+  if (travelRequest.status !== 'FULFILLED') {
+    return c.json({ error: 'Bad Request', message: 'Cash advances can only be requested for fulfilled trips.' }, 400);
   }
 
   const [created] = await db.insert(cashAdvances).values({
@@ -63,7 +63,7 @@ cashAdvanceRoutes.post('/', async (c) => {
       requested_amount: parsed.data.requested_amount.toFixed(2),
       returned_amount: '0.00',
       status: 'WAITING_PAYMENT',
-      status_label: 'Menunggu Pembayaran',
+      status_label: 'Menunggu Pencairan',
     },
   }, 201);
 });
@@ -78,7 +78,7 @@ cashAdvanceRoutes.get('/my', async (c) => {
   return c.json({
     cashAdvances: advances.map(({ travelRequest, ...advance }) => ({
       ...advance,
-      status_label: advance.status === 'DISBURSED' ? 'Dicairkan' : 'Menunggu Pembayaran',
+      status_label: advance.status === 'DISBURSED' ? 'Dicairkan' : 'Menunggu Pencairan',
       travel: {
         id: travelRequest.id,
         destination: travelRequest.destination,
@@ -131,13 +131,54 @@ cashAdvanceRoutes.post('/:id/process', async (c) => {
     return c.json({ error: 'Bad Request', message: 'Only pending cash advances can be disbursed.' }, 400);
   }
 
-  await db.update(cashAdvances)
-    .set({ status: 'DISBURSED' })
-    .where(eq(cashAdvances.id, id));
+  const [travelRequest] = await db.select().from(travelRequests)
+    .where(eq(travelRequests.id, advance.travel_request_id))
+    .limit(1);
+  if (!travelRequest || travelRequest.status !== 'FULFILLED') {
+    return c.json({ error: 'Conflict', message: 'Cash advances can only be disbursed for fulfilled trips.' }, 409);
+  }
+
+  const completedTravel = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(cashAdvances)
+      .set({ status: 'DISBURSED' })
+      .where(and(eq(cashAdvances.id, id), eq(cashAdvances.status, 'WAITING_PAYMENT')));
+
+    if (updated.affectedRows !== 1) {
+      return null;
+    }
+
+    const pendingAdvances = await tx.select({ id: cashAdvances.id }).from(cashAdvances)
+      .where(and(
+        eq(cashAdvances.travel_request_id, travelRequest.id),
+        eq(cashAdvances.status, 'WAITING_PAYMENT'),
+      ));
+
+    if (
+      pendingAdvances.length === 0
+      && travelRequest.lpj_completed_at
+      && new Date(travelRequest.end_date) <= new Date()
+    ) {
+      await tx.update(travelRequests)
+        .set({ status: 'COMPLETED', updated_at: new Date() })
+        .where(and(
+          eq(travelRequests.id, travelRequest.id),
+          eq(travelRequests.status, 'FULFILLED'),
+        ));
+    }
+
+    return pendingAdvances.length === 0
+      && Boolean(travelRequest.lpj_completed_at)
+      && new Date(travelRequest.end_date) <= new Date();
+  });
+
+  if (completedTravel === null) {
+    return c.json({ error: 'Conflict', message: 'This cash advance was already processed.' }, 409);
+  }
 
   return c.json({
     message: 'Cash advance disbursed successfully.',
     cashAdvance: { id, status: 'DISBURSED', status_label: 'Dicairkan' },
+    travel_status: completedTravel ? 'COMPLETED' : 'FULFILLED',
   });
 });
 

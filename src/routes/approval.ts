@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../db';
 import { travelApprovals, travelRequests } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
@@ -50,18 +50,36 @@ approvalRoutes.post('/:id/action', async (c) => {
     return c.json({ error: 'Not Found', message: 'Travel request was not found.' }, 404);
   }
 
-  const nextStatus = parsed.data.action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+  if (request.status !== 'PENDING') {
+    return c.json({ error: 'Conflict', message: 'Only pending travel requests can be approved or rejected.' }, 409);
+  }
 
-  await db.insert(travelApprovals).values({
-    travel_request_id: request.id,
-    approver_id: user.id,
-    status: parsed.data.action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-    notes: parsed.data.notes || null,
+  const nextStatus = parsed.data.action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+  const processed = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(travelRequests)
+      .set({ status: nextStatus, updated_at: new Date() })
+      .where(and(eq(travelRequests.id, id), eq(travelRequests.status, 'PENDING')));
+
+    if (updated.affectedRows !== 1) {
+      return false;
+    }
+
+    await tx.insert(travelApprovals).values({
+      travel_request_id: request.id,
+      approver_id: user.id,
+      status: parsed.data.action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+      notes: parsed.data.notes || null,
+    });
+
+    return true;
   });
 
-  await db.update(travelRequests)
-    .set({ status: nextStatus, updated_at: new Date() })
-    .where(eq(travelRequests.id, id));
+  if (!processed) {
+    return c.json({
+      error: 'Conflict',
+      message: 'This request was already processed by another approver.',
+    }, 409);
+  }
 
   return c.json({
     message: `Travel request ${parsed.data.action === 'APPROVE' ? 'approved' : 'rejected'} successfully.`,
