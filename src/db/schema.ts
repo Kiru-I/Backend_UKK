@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  AnyMySqlColumn,
   boolean,
   date,
   decimal,
@@ -47,6 +48,7 @@ export const companies = mysqlTable('companies', {
 export const users = mysqlTable('users', {
   id: int('id').autoincrement().primaryKey(),
   company_id: int('company_id').references(() => companies.id, { onDelete: 'cascade' }),
+  supervisor_id: int('supervisor_id').references((): AnyMySqlColumn => users.id, { onDelete: 'set null' }),
   name: varchar('name', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   nik: varchar('nik', { length: 50 }),
@@ -64,6 +66,7 @@ export const travelRequests = mysqlTable('travel_requests', {
   destination: varchar('destination', { length: 255 }).notNull(),
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
+  estimated_cost: decimal('estimated_cost', { precision: 12, scale: 2 }),
   purpose: text('purpose').notNull(),
   transportation_mode: transportationModeEnum,
   document_url: text('document_url'),
@@ -81,6 +84,10 @@ export const cashAdvances = mysqlTable('cash_advances', {
   requested_amount: decimal('requested_amount', { precision: 10, scale: 2 }).notNull(),
   returned_amount: decimal('returned_amount', { precision: 10, scale: 2 }).notNull().default('0.00'),
   status: cashAdvanceStatusEnum.notNull().default('WAITING_PAYMENT'),
+  payment_date: timestamp('payment_date'),
+  payment_reference: varchar('payment_reference', { length: 100 }),
+  payment_method: varchar('payment_method', { length: 100 }),
+  processed_by: int('processed_by').references(() => users.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at').defaultNow().notNull(),
   updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
 });
@@ -109,7 +116,19 @@ export const reimbursements = mysqlTable('reimbursements', {
   user_id: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   total_amount: decimal('total_amount', { precision: 10, scale: 2 }).notNull().default('0.00'),
   status: reimbursementStatusEnum.notNull().default('SUBMITTED'),
+  payment_date: timestamp('payment_date'),
+  payment_reference: varchar('payment_reference', { length: 100 }),
+  payment_method: varchar('payment_method', { length: 100 }),
+  processed_by: int('processed_by').references(() => users.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const financeSettings = mysqlTable('finance_settings', {
+  id: int('id').autoincrement().primaryKey(),
+  annual_budget: decimal('annual_budget', { precision: 14, scale: 2 }).notNull(),
+  payment_methods: text('payment_methods').notNull(),
+  updated_by: int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
 });
 
 export const reimbursementItems = mysqlTable('reimbursement_items', {

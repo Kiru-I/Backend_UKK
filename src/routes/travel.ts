@@ -13,6 +13,7 @@ const createTravelSchema = z.object({
   destination: z.string().min(2),
   start_date: z.string().min(1),
   end_date: z.string().min(1),
+  estimated_cost: z.coerce.number().positive().max(999999999999.99).optional(),
   purpose: z.string().min(5),
   transportation_mode: z.enum(transportationModes).optional(),
   document_url: z.string().url().optional().or(z.literal('')),
@@ -46,6 +47,7 @@ travelRoutes.post('/', async (c) => {
   let destination = '';
   let start_date = '';
   let end_date = '';
+  let estimated_cost: number | undefined;
   let purpose = '';
   let transportation_mode: string | undefined;
   let document_url = '';
@@ -56,6 +58,8 @@ travelRoutes.post('/', async (c) => {
     destination = String(formData.get('destination') || '');
     start_date = String(formData.get('start_date') || '');
     end_date = String(formData.get('end_date') || '');
+    const estimatedCostValue = formData.get('estimated_cost');
+    estimated_cost = estimatedCostValue ? Number(estimatedCostValue) : undefined;
     purpose = String(formData.get('purpose') || '');
     transportation_mode = String(formData.get('transportation_mode') || '') || undefined;
     document_url = String(formData.get('document_url') || '');
@@ -70,6 +74,7 @@ travelRoutes.post('/', async (c) => {
     destination = body.destination || '';
     start_date = body.start_date || '';
     end_date = body.end_date || '';
+    estimated_cost = body.estimated_cost === undefined ? undefined : Number(body.estimated_cost);
     purpose = body.purpose || '';
     transportation_mode = body.transportation_mode || undefined;
     document_url = body.document_url || '';
@@ -89,6 +94,7 @@ travelRoutes.post('/', async (c) => {
     destination,
     start_date,
     end_date,
+    estimated_cost,
     purpose,
     transportation_mode,
     document_url: finalDocumentUrl || '',
@@ -102,6 +108,7 @@ travelRoutes.post('/', async (c) => {
     destination: safeDestination,
     start_date: safeStartDate,
     end_date: safeEndDate,
+    estimated_cost: safeEstimatedCost,
     purpose: safePurpose,
     transportation_mode: safeTransportationMode,
     document_url: safeDocumentUrl,
@@ -119,6 +126,7 @@ travelRoutes.post('/', async (c) => {
       destination: safeDestination,
       start_date: startDate,
       end_date: endDate,
+      estimated_cost: safeEstimatedCost?.toFixed(2) || null,
       purpose: safePurpose,
       transportation_mode: safeTransportationMode || null,
       document_url: safeDocumentUrl || null,
@@ -134,6 +142,7 @@ travelRoutes.post('/', async (c) => {
       destination: safeDestination,
       start_date: safeStartDate,
       end_date: safeEndDate,
+      estimated_cost: safeEstimatedCost?.toFixed(2) || null,
       purpose: safePurpose,
       transportation_mode: safeTransportationMode || null,
       document_url: safeDocumentUrl || null,

@@ -7,6 +7,7 @@ import approvalRoutes from './routes/approval';
 import fulfillmentRoutes from './routes/fulfillment';
 import reimbursementRoutes from './routes/reimbursement';
 import cashAdvanceRoutes from './routes/cash-advance';
+import financeRoutes from './routes/finance';
 import dashboardRoutes from './routes/dashboard';
 
 const app = new Hono();
@@ -38,6 +39,7 @@ app.route('/api/approvals', approvalRoutes);
 app.route('/api/fulfillment', fulfillmentRoutes);
 app.route('/api/reimbursements', reimbursementRoutes);
 app.route('/api/cash-advances', cashAdvanceRoutes);
+app.route('/api/finance', financeRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 
 export default {

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db';
 import { reimbursements, reimbursementItems, travelRequests } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
@@ -43,7 +43,10 @@ reimbursementRoutes.get('/', async (c) => {
     with: {
       user: {
         columns: {
-          password_hash: false,
+          id: true,
+          name: true,
+          role: true,
+          department: true,
         },
       },
       travelRequest: true,
@@ -165,15 +168,39 @@ reimbursementRoutes.post('/:id/process', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'Validation Error', details: parsed.error.flatten() }, 400);
   }
+  if (parsed.data.status === 'PAID') {
+    return c.json({
+      error: 'Conflict',
+      message: 'Use POST /api/finance/payments/reimbursement/:id/process to record payment metadata.',
+    }, 409);
+  }
 
   const [record] = await db.select().from(reimbursements).where(eq(reimbursements.id, id)).limit(1);
   if (!record) {
     return c.json({ error: 'Not Found', message: 'Reimbursement was not found.' }, 404);
   }
+  if (record.status === 'PAID') {
+    return c.json({
+      error: 'Conflict',
+      message: 'This reimbursement is already paid.',
+    }, 409);
+  }
+  if (record.status === 'VERIFIED' && parsed.data.status !== 'VERIFIED') {
+    return c.json({
+      error: 'Conflict',
+      message: 'Verified reimbursements can only be completed through the Finance payment API.',
+    }, 409);
+  }
 
-  await db.update(reimbursements)
-    .set({ status: parsed.data.status, total_amount: record.total_amount })
-    .where(eq(reimbursements.id, id));
+  const [updated] = await db.update(reimbursements)
+    .set({ status: parsed.data.status })
+    .where(and(
+      eq(reimbursements.id, id),
+      inArray(reimbursements.status, ['SUBMITTED', 'NEEDS_DOCUMENTS']),
+    ));
+  if (updated.affectedRows !== 1) {
+    return c.json({ error: 'Conflict', message: 'This reimbursement was already processed.' }, 409);
+  }
 
   return c.json({
     message: 'Reimbursement processed successfully.',

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db';
-import { cashAdvances, travelRequests } from '../db/schema';
+import { cashAdvances, travelRequests, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { getTravelTracking } from '../lib/travel-tracking';
 
@@ -19,6 +19,11 @@ const createSchema = z.object({
 
 const settlementSchema = z.object({
   returned_amount: z.coerce.number().min(0),
+});
+
+const processPaymentSchema = z.object({
+  payment_reference: z.string().trim().min(1).max(100).optional(),
+  payment_method: z.string().trim().min(2).max(100).optional(),
 });
 
 cashAdvanceRoutes.use('*', authMiddleware);
@@ -102,10 +107,26 @@ cashAdvanceRoutes.get('/pending', async (c) => {
     return c.json({ error: 'Forbidden', message: 'Only finance team can view pending cash advances.' }, 403);
   }
 
-  const pending = await db.query.cashAdvances.findMany({
-    where: eq(cashAdvances.status, 'WAITING_PAYMENT'),
-    with: { user: true, travelRequest: true },
-  });
+  const pending = await db.select({
+    id: cashAdvances.id,
+    user_id: cashAdvances.user_id,
+    applicant_name: users.name,
+    applicant_role: users.role,
+    department: users.department,
+    travel_request_id: travelRequests.id,
+    destination: travelRequests.destination,
+    estimated_cost: cashAdvances.estimated_cost,
+    requested_amount: cashAdvances.requested_amount,
+    status: cashAdvances.status,
+    requested_at: cashAdvances.created_at,
+  })
+    .from(cashAdvances)
+    .innerJoin(users, eq(cashAdvances.user_id, users.id))
+    .innerJoin(travelRequests, eq(cashAdvances.travel_request_id, travelRequests.id))
+    .where(and(
+      eq(cashAdvances.status, 'WAITING_PAYMENT'),
+      eq(travelRequests.status, 'FULFILLED'),
+    ));
 
   return c.json({ pending });
 });
@@ -137,10 +158,28 @@ cashAdvanceRoutes.post('/:id/process', async (c) => {
   if (!travelRequest || travelRequest.status !== 'FULFILLED') {
     return c.json({ error: 'Conflict', message: 'Cash advances can only be disbursed for fulfilled trips.' }, 409);
   }
+  const body = await c.req.json().catch(() => ({}));
+  const parsedPayment = processPaymentSchema.safeParse(body);
+  if (!parsedPayment.success) {
+    return c.json({ error: 'Validation Error', details: parsedPayment.error.flatten() }, 400);
+  }
+  const paymentDate = new Date();
+  const paymentReference = parsedPayment.data.payment_reference
+    ? parsedPayment.data.payment_reference
+    : `LEGACY-ADV-${id}-${paymentDate.getTime()}`;
+  const paymentMethod = parsedPayment.data.payment_method
+    ? parsedPayment.data.payment_method
+    : 'MANUAL';
 
   const completedTravel = await db.transaction(async (tx) => {
     const [updated] = await tx.update(cashAdvances)
-      .set({ status: 'DISBURSED' })
+      .set({
+        status: 'DISBURSED',
+        payment_date: paymentDate,
+        payment_reference: paymentReference,
+        payment_method: paymentMethod,
+        processed_by: user.id,
+      })
       .where(and(eq(cashAdvances.id, id), eq(cashAdvances.status, 'WAITING_PAYMENT')));
 
     if (updated.affectedRows !== 1) {
@@ -177,7 +216,15 @@ cashAdvanceRoutes.post('/:id/process', async (c) => {
 
   return c.json({
     message: 'Cash advance disbursed successfully.',
-    cashAdvance: { id, status: 'DISBURSED', status_label: 'Dicairkan' },
+    cashAdvance: {
+      id,
+      status: 'DISBURSED',
+      status_label: 'Dicairkan',
+      payment_date: paymentDate,
+      payment_reference: paymentReference,
+      payment_method: paymentMethod,
+      processed_by: user.id,
+    },
     travel_status: completedTravel ? 'COMPLETED' : 'FULFILLED',
   });
 });

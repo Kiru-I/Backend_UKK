@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
-import { users } from '../db/schema';
+import { companies, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { hashPassword } from '../lib/auth';
 
@@ -14,7 +14,37 @@ const createUserSchema = z.object({
   password: z.string().min(6),
   role: z.enum(['Karyawan', 'Atasan', 'Admin Travel', 'Tim Keuangan', 'Super Admin']),
   department: z.string().min(2),
+  company_id: z.coerce.number().int().positive().optional(),
+  supervisor_id: z.coerce.number().int().positive().optional(),
 });
+
+const updateUserSchema = z.object({
+  name: z.string().min(2).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(6).optional(),
+  role: z.enum(['Karyawan', 'Atasan', 'Admin Travel', 'Tim Keuangan', 'Super Admin']).optional(),
+  department: z.string().min(2).optional(),
+  company_id: z.coerce.number().int().positive().nullable().optional(),
+  supervisor_id: z.coerce.number().int().positive().nullable().optional(),
+});
+
+async function isValidSupervisor(supervisorId: number, companyId: number | undefined) {
+  const [supervisor] = await db.select({
+    id: users.id,
+    role: users.role,
+    company_id: users.company_id,
+  })
+    .from(users)
+    .where(eq(users.id, supervisorId))
+    .limit(1);
+
+  return Boolean(
+    supervisor
+    && supervisor.role === 'Atasan'
+    && companyId !== undefined
+    && supervisor.company_id === companyId
+  );
+}
 
 usersRoutes.use('*', authMiddleware);
 
@@ -48,6 +78,23 @@ usersRoutes.post('/', async (c) => {
   if (existingUser.length > 0) {
     return c.json({ error: 'Conflict', message: 'A user with this email already exists.' }, 409);
   }
+  if (parsed.data.company_id !== undefined) {
+    const [company] = await db.select({ id: companies.id }).from(companies)
+      .where(eq(companies.id, parsed.data.company_id))
+      .limit(1);
+    if (!company) {
+      return c.json({ error: 'Bad Request', message: 'Company was not found.' }, 400);
+    }
+  }
+  if (parsed.data.role === 'Karyawan' && (parsed.data.company_id === undefined || parsed.data.supervisor_id === undefined)) {
+    return c.json({ error: 'Bad Request', message: 'Employees must be assigned to an Atasan in their company.' }, 400);
+  }
+  if (
+    parsed.data.supervisor_id !== undefined
+    && !(await isValidSupervisor(parsed.data.supervisor_id, parsed.data.company_id))
+  ) {
+    return c.json({ error: 'Bad Request', message: 'supervisor_id must identify an Atasan in the same company.' }, 400);
+  }
 
   const passwordHash = await hashPassword(parsed.data.password);
   const [created] = await db.insert(users).values([
@@ -57,6 +104,8 @@ usersRoutes.post('/', async (c) => {
       password_hash: passwordHash,
       role: parsed.data.role,
       department: parsed.data.department,
+      company_id: parsed.data.company_id ?? null,
+      supervisor_id: parsed.data.supervisor_id ?? null,
     },
   ]);
 
@@ -68,6 +117,8 @@ usersRoutes.post('/', async (c) => {
       email: parsed.data.email,
       role: parsed.data.role,
       department: parsed.data.department,
+      company_id: parsed.data.company_id ?? null,
+      supervisor_id: parsed.data.supervisor_id ?? null,
     },
   }, 201);
 });
@@ -87,21 +138,70 @@ usersRoutes.put('/:id', async (c) => {
   if (!body) {
     return c.json({ error: 'Bad Request', message: 'Request body is required.' }, 400);
   }
+  const parsed = updateUserSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation Error', details: parsed.error.flatten() }, 400);
+  }
 
   const [record] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   if (!record) {
     return c.json({ error: 'Not Found', message: 'User was not found.' }, 404);
   }
+  if (parsed.data.email) {
+    const [duplicate] = await db.select({ id: users.id }).from(users)
+      .where(eq(users.email, parsed.data.email))
+      .limit(1);
+    if (duplicate && duplicate.id !== record.id) {
+      return c.json({ error: 'Conflict', message: 'A user with this email already exists.' }, 409);
+    }
+  }
+
+  const companyId = parsed.data.company_id === undefined
+    ? record.company_id
+    : parsed.data.company_id === null
+      ? null
+      : parsed.data.company_id;
+  const supervisorId = parsed.data.supervisor_id === undefined
+    ? record.supervisor_id
+    : parsed.data.supervisor_id === null
+      ? null
+      : parsed.data.supervisor_id;
+  const role = parsed.data.role ?? record.role;
+  if (companyId !== null && (!Number.isInteger(companyId) || companyId <= 0)) {
+    return c.json({ error: 'Bad Request', message: 'company_id must be a positive integer or null.' }, 400);
+  }
+  if (supervisorId !== null && (!Number.isInteger(supervisorId) || supervisorId <= 0)) {
+    return c.json({ error: 'Bad Request', message: 'supervisor_id must be a positive integer or null.' }, 400);
+  }
+  if (companyId !== null) {
+    const [company] = await db.select({ id: companies.id }).from(companies)
+      .where(eq(companies.id, companyId))
+      .limit(1);
+    if (!company) {
+      return c.json({ error: 'Bad Request', message: 'Company was not found.' }, 400);
+    }
+  }
+  if (role === 'Karyawan' && (companyId === null || supervisorId === null)) {
+    return c.json({ error: 'Bad Request', message: 'Employees must be assigned to an Atasan in their company.' }, 400);
+  }
+  if (
+    supervisorId !== null
+    && !(await isValidSupervisor(supervisorId, companyId ?? undefined))
+  ) {
+    return c.json({ error: 'Bad Request', message: 'supervisor_id must identify an Atasan in the same company.' }, 400);
+  }
 
   const updates: Partial<typeof users.$inferInsert> = {
-    name: typeof body.name === 'string' ? body.name : record.name,
-    email: typeof body.email === 'string' ? body.email : record.email,
-    role: typeof body.role === 'string' ? (body.role as typeof record.role) : record.role,
-    department: typeof body.department === 'string' ? body.department : record.department,
+    name: parsed.data.name ?? record.name,
+    email: parsed.data.email ?? record.email,
+    role: role,
+    department: parsed.data.department ?? record.department,
+    company_id: companyId,
+    supervisor_id: supervisorId,
   };
 
-  if (typeof body.password === 'string' && body.password.length >= 6) {
-    updates.password_hash = await hashPassword(body.password);
+  if (parsed.data.password) {
+    updates.password_hash = await hashPassword(parsed.data.password);
   }
 
   await db.update(users).set(updates).where(eq(users.id, id));

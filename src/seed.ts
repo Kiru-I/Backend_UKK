@@ -1,10 +1,13 @@
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { db } from './db';
 import {
   cashAdvances,
   companies,
+  financeSettings,
   reimbursementItems,
   reimbursements,
+  travelApprovals,
+  travelFulfillments,
   travelRequests,
   users,
 } from './db/schema';
@@ -25,7 +28,7 @@ const companySeeds = [
 
 const departments = ['Engineering', 'Finance', 'HR', 'Sales', 'Operations', 'Logistik', 'Marketing', 'Product', 'IT', 'Legal'];
 const destinations = ['Jakarta', 'Bandung', 'Yogyakarta', 'Surabaya', 'Bali', 'Singapore', 'Bangkok', 'Medan', 'Makassar', 'Balikpapan', 'Semarang', 'Palembang'];
-const travelStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'FULFILLED', 'COMPLETED'] as const;
+const travelStatuses = ['FULFILLED', 'COMPLETED'] as const;
 const reimbursementStatuses = ['SUBMITTED', 'NEEDS_DOCUMENTS', 'VERIFIED', 'PAID', 'REJECTED'] as const;
 const cashAdvanceStatuses = ['WAITING_PAYMENT', 'DISBURSED'] as const;
 type UserRoleSeed = 'Karyawan' | 'Atasan' | 'Admin Travel' | 'Tim Keuangan' | 'Super Admin';
@@ -63,6 +66,7 @@ function buildTravelSeed(userId: number, companyIndex: number, userIndex: number
   destination: string;
   start_date: Date;
   end_date: Date;
+  estimated_cost: string;
   purpose: string;
   transportation_mode: TransportationModeSeed;
   document_url: string;
@@ -70,13 +74,9 @@ function buildTravelSeed(userId: number, companyIndex: number, userIndex: number
   lpj_completed_at: Date | null;
 } {
   const destination = destinations[(companyIndex * 2 + userIndex + requestIndex) % destinations.length];
-  const status = travelStatuses[(userIndex + requestIndex + companyIndex) % travelStatuses.length];
-  const startDate = status === 'COMPLETED'
-    ? new Date(Date.UTC(2026, 1, 5 + userIndex, 0, 0, 0))
-    : new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 5 + userIndex, 0, 0, 0));
-  const endDate = status === 'COMPLETED'
-    ? new Date(Date.UTC(2026, 1, 7 + userIndex, 0, 0, 0))
-    : new Date(Date.UTC(2026, 7 + companyIndex + requestIndex, 8 + userIndex + requestIndex, 0, 0, 0));
+  const status = requestIndex === 4 ? 'COMPLETED' : 'FULFILLED';
+  const startDate = new Date(Date.UTC(2026, 1 + requestIndex, 5 + userIndex, 0, 0, 0));
+  const endDate = new Date(Date.UTC(2026, 1 + requestIndex, 7 + userIndex + requestIndex, 0, 0, 0));
   const transportationModes: TransportationModeSeed[] = ['Pesawat', 'Kereta Api', 'Travel', 'Mobil Kantor'];
 
   return {
@@ -84,20 +84,24 @@ function buildTravelSeed(userId: number, companyIndex: number, userIndex: number
     destination,
     start_date: startDate,
     end_date: endDate,
+    estimated_cost: String(7000000 + requestIndex * 750000 + userIndex * 100000),
     purpose: `Kegiatan ${requestIndex + 1} untuk ${destination} dengan kebutuhan operasional dan koordinasi internal perusahaan.`,
     transportation_mode: transportationModes[(userIndex + requestIndex + companyIndex) % transportationModes.length],
     document_url: `https://example.com/docs/${companySeeds[companyIndex].company_code.toLowerCase()}-${userIndex + 1}-${requestIndex + 1}.pdf`,
     status,
-    lpj_completed_at: status === 'COMPLETED' || requestIndex % 2 === 0
-      ? new Date(Date.UTC(2026, status === 'COMPLETED' ? 2 : 8 + companyIndex + requestIndex, 10 + userIndex, 0, 0, 0))
+    lpj_completed_at: status === 'COMPLETED'
+      ? new Date(Date.UTC(2026, 6, 10 + userIndex, 0, 0, 0))
       : null,
   };
 }
 
 async function resetTables() {
+  await db.delete(financeSettings);
   await db.delete(reimbursementItems);
   await db.delete(reimbursements);
   await db.delete(cashAdvances);
+  await db.delete(travelFulfillments);
+  await db.delete(travelApprovals);
   await db.delete(travelRequests);
   await db.delete(users);
   await db.delete(companies);
@@ -107,7 +111,7 @@ async function seed() {
   await resetTables();
 
   await db.insert(companies).values(companySeeds);
-  const companyRows = await db.select().from(companies);
+  const companyRows = await db.select().from(companies).orderBy(asc(companies.id));
   const companyMap = new Map(companyRows.map((company) => [company.company_code, company.id]));
 
   const generatedUsers: Array<{
@@ -141,12 +145,42 @@ async function seed() {
 
   await db.insert(users).values(userRecords);
 
+  const insertedUsers = await db.select().from(users).orderBy(asc(users.id));
+  for (const company of companyRows) {
+    const companyUsers = insertedUsers.filter((item) => item.company_id === company.id);
+    const managers = companyUsers.filter((item) => item.role === 'Atasan');
+    const employees = companyUsers.filter((item) => item.role === 'Karyawan');
+    if (managers.length < 2) {
+      throw new Error(`Company ${company.id} needs at least two Atasan users.`);
+    }
+    for (let index = 0; index < employees.length; index += 1) {
+      await db.update(users)
+        .set({ supervisor_id: managers[index % managers.length].id })
+        .where(eq(users.id, employees[index].id));
+    }
+  }
+
   const createdUsers = await db.select().from(users).orderBy(asc(users.id));
+  const firstFinanceUser = createdUsers.find((item) => item.role === 'Tim Keuangan');
+  if (!firstFinanceUser) {
+    throw new Error('A Finance user is required to seed finance settings.');
+  }
+  await db.insert(financeSettings).values({
+    annual_budget: '250000000.00',
+    payment_methods: JSON.stringify([
+      { code: 'BANK_TRANSFER', label: 'Transfer Bank', description: 'Pembayaran melalui transfer bank.' },
+      { code: 'CASH', label: 'Tunai', description: 'Pembayaran tunai dengan bukti transaksi.' },
+    ]),
+    updated_by: firstFinanceUser.id,
+  });
+  const nextUserIndexByCompany = new Map<number, number>();
+  const userIndexById = new Map<number, number>();
   const travelRecords = [] as Array<{
     user_id: number;
     destination: string;
     start_date: Date;
     end_date: Date;
+    estimated_cost: string;
     purpose: string;
     transportation_mode: TransportationModeSeed;
     document_url: string;
@@ -156,13 +190,22 @@ async function seed() {
 
   for (const user of createdUsers) {
     const companyIndex = companyRows.findIndex((company) => company.id === user.company_id);
-    for (let requestIndex = 0; requestIndex < 3; requestIndex += 1) {
-      const travelSeed = buildTravelSeed(user.id, companyIndex, createdUsers.findIndex((currentUser) => currentUser.id === user.id) % 10, requestIndex);
+    if (companyIndex < 0) {
+      throw new Error(`Company for user ${user.id} not found after insertion.`);
+    }
+
+    const userIndex = nextUserIndexByCompany.get(companyIndex) ?? 0;
+    nextUserIndexByCompany.set(companyIndex, userIndex + 1);
+    userIndexById.set(user.id, userIndex);
+
+    for (let requestIndex = 0; requestIndex < 5; requestIndex += 1) {
+      const travelSeed = buildTravelSeed(user.id, companyIndex, userIndex, requestIndex);
       travelRecords.push({
         user_id: travelSeed.user_id,
         destination: travelSeed.destination,
         start_date: travelSeed.start_date,
         end_date: travelSeed.end_date,
+        estimated_cost: travelSeed.estimated_cost,
         purpose: travelSeed.purpose,
         transportation_mode: travelSeed.transportation_mode,
         document_url: travelSeed.document_url,
@@ -175,6 +218,48 @@ async function seed() {
   await db.insert(travelRequests).values(travelRecords);
 
   const createdTravelRequests = await db.select().from(travelRequests).orderBy(asc(travelRequests.id));
+  const travelApprovalRecords = [];
+  const travelFulfillmentRecords = [];
+  const nextTravelIndexByUser = new Map<number, number>();
+
+  for (const travelRequest of createdTravelRequests) {
+    const user = createdUsers.find((item) => item.id === travelRequest.user_id);
+    if (!user || user.company_id === null) {
+      throw new Error(`User for travel request ${travelRequest.id} not found.`);
+    }
+
+    const approver = user.supervisor_id
+      ? createdUsers.find((item) => item.id === user.supervisor_id)
+      : createdUsers.find((item) =>
+        item.company_id === user.company_id && item.role === 'Atasan' && item.id !== user.id
+      );
+    const admin = createdUsers.find((item) =>
+      item.company_id === user.company_id && item.role === 'Admin Travel'
+    );
+    if (!approver || !admin) {
+      throw new Error(`Approver or travel admin for company ${user.company_id} not found.`);
+    }
+
+    const travelIndex = nextTravelIndexByUser.get(user.id) ?? 0;
+    nextTravelIndexByUser.set(user.id, travelIndex + 1);
+
+    travelApprovalRecords.push({
+      travel_request_id: travelRequest.id,
+      approver_id: approver.id,
+      status: 'APPROVED' as const,
+      notes: 'Disetujui untuk kebutuhan operasional perusahaan.',
+    });
+    travelFulfillmentRecords.push({
+      travel_request_id: travelRequest.id,
+      admin_id: admin.id,
+      transport_details: `Transportasi perjalanan ${travelIndex + 1} telah dikonfirmasi.`,
+      accommodation_details: `Akomodasi perjalanan ${travelIndex + 1} telah dikonfirmasi.`,
+    });
+  }
+
+  await db.insert(travelApprovals).values(travelApprovalRecords);
+  await db.insert(travelFulfillments).values(travelFulfillmentRecords);
+
   const cashAdvanceRecords = [] as Array<{
     travel_request_id: number;
     user_id: number;
@@ -182,35 +267,75 @@ async function seed() {
     requested_amount: string;
     returned_amount: string;
     status: (typeof cashAdvanceStatuses)[number];
+    payment_date: Date | null;
+    payment_reference: string | null;
+    payment_method: string | null;
+    processed_by: number | null;
   }>;
   const reimbursementRecords = [] as Array<{
     travel_request_id: number;
     user_id: number;
     total_amount: string;
     status: (typeof reimbursementStatuses)[number];
+    payment_date: Date | null;
+    payment_reference: string | null;
+    payment_method: string | null;
+    processed_by: number | null;
   }>;
+  const nextRequestIndexByUser = new Map<number, number>();
+  const travelRequestIndexes = new Map<number, number>();
 
   for (let index = 0; index < createdTravelRequests.length; index += 1) {
     const travelRequest = createdTravelRequests[index];
     const user = createdUsers.find((item) => item.id === travelRequest.user_id)!;
-    const baseAmount = (index + 1) * 1500000;
+    const requestIndex = nextRequestIndexByUser.get(user.id) ?? 0;
+    nextRequestIndexByUser.set(user.id, requestIndex + 1);
+    travelRequestIndexes.set(travelRequest.id, requestIndex);
+    const userIndex = userIndexById.get(user.id);
+    if (userIndex === undefined) {
+      throw new Error(`Seed index for user ${user.id} not found.`);
+    }
+    const estimatedCost = 6000000 + requestIndex * 750000 + userIndex * 100000;
+    const requestedAmount = estimatedCost - 1000000;
+    const advanceDisbursed = requestIndex === 1 || requestIndex === 3 || requestIndex === 4;
+    const paymentDate = new Date(Date.UTC(2026, 8, 1 + userIndex, 10, 0, 0));
+    const financeUser = createdUsers.find((item) =>
+      item.company_id === user.company_id && item.role === 'Tim Keuangan'
+    );
+    if (!financeUser) {
+      throw new Error(`Finance user for company ${user.company_id} not found.`);
+    }
 
     cashAdvanceRecords.push({
       travel_request_id: travelRequest.id,
       user_id: user.id,
-      estimated_cost: String(baseAmount + 2000000),
-      requested_amount: String(baseAmount + 1500000),
-      returned_amount: String(index % 2 === 0 ? 300000 : 0),
-      status: travelRequest.status === 'COMPLETED'
-        ? 'DISBURSED'
-        : cashAdvanceStatuses[index % cashAdvanceStatuses.length],
+      estimated_cost: estimatedCost.toFixed(2),
+      requested_amount: requestedAmount.toFixed(2),
+      returned_amount: '0.00',
+      status: advanceDisbursed ? 'DISBURSED' : cashAdvanceStatuses[0],
+      payment_date: advanceDisbursed ? paymentDate : null,
+      payment_reference: advanceDisbursed ? `SEED-ADV-${travelRequest.id}` : null,
+      payment_method: advanceDisbursed ? 'BANK_TRANSFER' : null,
+      processed_by: advanceDisbursed ? financeUser.id : null,
     });
 
+    const reimbursementTotal = 1800000 + (userIndex * 5 + requestIndex) * 100000;
+    const reimbursementStatus = [
+      'SUBMITTED',
+      'VERIFIED',
+      'PAID',
+      'NEEDS_DOCUMENTS',
+      'PAID',
+    ][requestIndex] as (typeof reimbursementStatuses)[number];
     reimbursementRecords.push({
       travel_request_id: travelRequest.id,
       user_id: user.id,
-      total_amount: String(baseAmount + 3200000),
-      status: reimbursementStatuses[index % reimbursementStatuses.length],
+      total_amount: reimbursementTotal.toFixed(2),
+      status: reimbursementStatus,
+      payment_date: reimbursementStatus === 'PAID' ? paymentDate : null,
+      payment_reference: reimbursementStatus === 'PAID' ? `SEED-REB-${travelRequest.id}` : null,
+      payment_method: reimbursementStatus === 'PAID' ? 'BANK_TRANSFER' : null,
+      processed_by: reimbursementStatus === 'PAID' ? financeUser.id : null,
     });
   }
 
@@ -229,14 +354,29 @@ async function seed() {
   for (let index = 0; index < createdReimbursements.length; index += 1) {
     const reimbursement = createdReimbursements[index];
     const itemCategories = ['Transportasi', 'Akomodasi', 'Makan'];
+    const travelRequest = createdTravelRequests.find((item) => item.id === reimbursement.travel_request_id);
+    const requestIndex = travelRequestIndexes.get(reimbursement.travel_request_id);
+    const user = travelRequest && createdUsers.find((item) => item.id === travelRequest.user_id);
+    if (!travelRequest || requestIndex === undefined || !user) {
+      throw new Error(`Travel request for reimbursement ${reimbursement.id} not found.`);
+    }
+    const userIndex = userIndexById.get(user.id);
+    if (userIndex === undefined) {
+      throw new Error(`Seed index for user ${user.id} not found.`);
+    }
+    const total = 1800000 + (userIndex * 5 + requestIndex) * 100000;
+    const transportAmount = Math.round(total * 0.5);
+    const accommodationAmount = Math.round(total * 0.3);
+    const mealAmount = total - transportAmount - accommodationAmount;
+    const itemAmounts = [transportAmount, accommodationAmount, mealAmount];
 
     itemCategories.forEach((category, itemIndex) => {
       reimbursementItemRecords.push({
         reimbursement_id: reimbursement.id,
         category,
-        amount: String((index + 1) * 1200000 + (itemIndex + 1) * 350000),
+        amount: itemAmounts[itemIndex].toFixed(2),
         receipt_url: `https://example.com/receipts/${reimbursement.id}-${category.toLowerCase().replace(/\s+/g, '-')}.pdf`,
-        description: `Pembiayaan ${category.toLowerCase()} untuk perjalanan kerja nomor ${index + 1}.`,
+        description: `Pembiayaan ${category.toLowerCase()} untuk perjalanan kerja nomor ${requestIndex + 1}.`,
       });
     });
   }
@@ -245,7 +385,53 @@ async function seed() {
     await db.insert(reimbursementItems).values(reimbursementItemRecords);
   }
 
-  console.log('Seeded 2 companies, 20 users, and 60 travel requests with cash advances and reimbursements.');
+  const pendingApprovalRecords = createdUsers
+    .filter((item) => item.role === 'Karyawan')
+    .map((employee) => {
+      const userIndex = userIndexById.get(employee.id);
+      if (userIndex === undefined) {
+        throw new Error(`Seed index for user ${employee.id} not found.`);
+      }
+      const destination = destinations[(userIndex + 1) % destinations.length];
+      return {
+        user_id: employee.id,
+        destination,
+        start_date: new Date(Date.UTC(2026, 10, 10 + userIndex, 0, 0, 0)),
+        end_date: new Date(Date.UTC(2026, 10, 12 + userIndex, 0, 0, 0)),
+        estimated_cost: String(5000000 + userIndex * 250000),
+        purpose: `Pengajuan perjalanan menunggu persetujuan ke ${destination}.`,
+        transportation_mode: 'Pesawat' as const,
+        document_url: `https://example.com/docs/pending-${employee.id}.pdf`,
+        status: 'PENDING' as const,
+      };
+    });
+  await db.insert(travelRequests).values(pendingApprovalRecords);
+
+  const rejectedEmployee = createdUsers.find((item) =>
+    item.role === 'Karyawan' && item.company_id === companyRows[0].id
+  );
+  if (!rejectedEmployee || rejectedEmployee.supervisor_id === null) {
+    throw new Error('An employee with an assigned Atasan is required to seed approval history.');
+  }
+  const [rejectedTravel] = await db.insert(travelRequests).values({
+    user_id: rejectedEmployee.id,
+    destination: 'Jakarta',
+    start_date: new Date(Date.UTC(2026, 11, 15, 0, 0, 0)),
+    end_date: new Date(Date.UTC(2026, 11, 17, 0, 0, 0)),
+    estimated_cost: '3200000.00',
+    purpose: 'Contoh perjalanan yang ditolak untuk pengujian riwayat persetujuan.',
+    transportation_mode: 'Kereta Api',
+    document_url: `https://example.com/docs/rejected-${rejectedEmployee.id}.pdf`,
+    status: 'REJECTED',
+  });
+  await db.insert(travelApprovals).values({
+    travel_request_id: rejectedTravel.insertId,
+    approver_id: rejectedEmployee.supervisor_id,
+    status: 'REJECTED',
+    notes: 'Contoh penolakan untuk menguji riwayat persetujuan.',
+  });
+
+  console.log('Seeded 2 companies, 20 users, 100 finance-linked travel requests, 12 pending approvals, 1 rejected request, 100 cash advances, 100 reimbursements, and 300 reimbursement items.');
 }
 
 seed().catch((error) => {

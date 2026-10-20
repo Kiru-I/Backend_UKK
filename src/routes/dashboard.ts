@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { db } from '../db';
-import { cashAdvances, reimbursements, travelRequests, users } from '../db/schema';
+import { cashAdvances, travelApprovals, travelRequests, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { getTravelTracking } from '../lib/travel-tracking';
+import { getFinanceTransactions } from '../lib/finance-report';
 
 const dashboardRoutes = new Hono();
 const annualTravelQuota = 12;
@@ -85,6 +86,52 @@ dashboardRoutes.get('/stats', async (c) => {
     return c.json({ error: 'Forbidden', message: 'You do not have permission to access dashboard analytics.' }, 403);
   }
 
+  if (user.role === 'Atasan') {
+    const yearParam = c.req.query('year');
+    if (yearParam !== undefined && !/^\d{4}$/.test(yearParam)) {
+      return c.json({ error: 'Bad Request', message: 'year must be a four-digit year.' }, 400);
+    }
+    const year = yearParam ? Number(yearParam) : new Date().getFullYear();
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const nextYearStart = new Date(Date.UTC(year + 1, 0, 1));
+    const [pendingStats, decisionHistory] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` })
+        .from(travelRequests)
+        .innerJoin(users, eq(travelRequests.user_id, users.id))
+        .where(and(
+          eq(users.supervisor_id, user.id),
+          eq(users.role, 'Karyawan'),
+          eq(travelRequests.status, 'PENDING'),
+          gte(travelRequests.created_at, yearStart),
+          lt(travelRequests.created_at, nextYearStart),
+        )),
+      db.select({
+        status: travelApprovals.status,
+        count: sql<number>`count(*)`,
+      })
+        .from(travelApprovals)
+        .innerJoin(travelRequests, eq(travelApprovals.travel_request_id, travelRequests.id))
+        .innerJoin(users, eq(travelRequests.user_id, users.id))
+        .where(and(
+          eq(users.supervisor_id, user.id),
+          eq(users.role, 'Karyawan'),
+          eq(travelApprovals.approver_id, user.id),
+          gte(travelApprovals.created_at, yearStart),
+          lt(travelApprovals.created_at, nextYearStart),
+        ))
+        .groupBy(travelApprovals.status),
+    ]);
+    const approved = decisionHistory.find((item) => item.status === 'APPROVED')?.count ?? 0;
+    const rejected = decisionHistory.find((item) => item.status === 'REJECTED')?.count ?? 0;
+
+    return c.json({
+      year,
+      pending: Number(pendingStats[0].count),
+      approved: Number(approved),
+      rejected: Number(rejected),
+    });
+  }
+
   const [upcoming] = await db.select({ count: sql<number>`count(*)` }).from(travelRequests).where(eq(travelRequests.status, 'APPROVED'));
   const [ongoing] = await db.select({ count: sql<number>`count(*)` }).from(travelRequests).where(eq(travelRequests.status, 'FULFILLED'));
   const [completed] = await db.select({ count: sql<number>`count(*)` }).from(travelRequests).where(eq(travelRequests.status, 'COMPLETED'));
@@ -98,20 +145,31 @@ dashboardRoutes.get('/stats', async (c) => {
 
 dashboardRoutes.get('/expenses', async (c) => {
   const user = c.get('user');
-  if (user.role !== 'Super Admin' && user.role !== 'Tim Keuangan' && user.role !== 'Admin Travel') {
+  if (user.role !== 'Super Admin' && user.role !== 'Tim Keuangan') {
     return c.json({ error: 'Forbidden', message: 'You do not have permission to access expense reports.' }, 403);
   }
 
-  const expenseSummary = await db.select({
-    employee_name: users.name,
-    department: users.department,
-    total: sql<number>`coalesce(sum(${reimbursements.total_amount}), 0)`,
-  })
-    .from(reimbursements)
-    .leftJoin(users, eq(reimbursements.user_id, users.id))
-    .groupBy(users.id, users.name, users.department);
+  const transactions = await getFinanceTransactions();
+  const expenseByEmployee = new Map<number, {
+    employee_name: string;
+    role: string;
+    department: string;
+    total: number;
+  }>();
+  for (const transaction of transactions) {
+    const existing = expenseByEmployee.get(transaction.applicant_id);
+    expenseByEmployee.set(transaction.applicant_id, {
+      employee_name: transaction.applicant_name,
+      role: transaction.role,
+      department: transaction.department,
+      total: (existing?.total ?? 0) + Number(transaction.actual_expense),
+    });
+  }
 
-  return c.json({ expenses: expenseSummary });
+  return c.json({
+    expenses: [...expenseByEmployee.values()],
+    transactions,
+  });
 });
 
 export default dashboardRoutes;
