@@ -9,6 +9,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from 'drizzle-orm/mysql-core';
 
@@ -110,6 +111,24 @@ export const travelFulfillments = mysqlTable('travel_fulfillments', {
   created_at: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const travelBookings = mysqlTable('travel_bookings', {
+  id: int('id').autoincrement().primaryKey(),
+  travel_request_id: int('travel_request_id').notNull().references(() => travelRequests.id, { onDelete: 'cascade' }),
+  user_id: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  booking_code: varchar('booking_code', { length: 100 }).notNull().unique(),
+  transportation_mode: transportationModeEnum.notNull(),
+  operator: varchar('operator', { length: 255 }),
+  departure_at: timestamp('departure_at'),
+  arrival_at: timestamp('arrival_at'),
+  hotel_name: varchar('hotel_name', { length: 255 }),
+  room_type: varchar('room_type', { length: 255 }),
+  check_in_date: date('check_in_date'),
+  check_out_date: date('check_out_date'),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  travelRequestUnique: uniqueIndex('travel_bookings_travel_request_id_unique').on(table.travel_request_id),
+}));
+
 export const reimbursements = mysqlTable('reimbursements', {
   id: int('id').autoincrement().primaryKey(),
   travel_request_id: int('travel_request_id').notNull().references(() => travelRequests.id, { onDelete: 'cascade' }),
@@ -154,6 +173,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   cashAdvances: many(cashAdvances),
   approvals: many(travelApprovals),
   fulfillments: many(travelFulfillments),
+  bookings: many(travelBookings),
   reimbursements: many(reimbursements),
 }));
 
@@ -164,6 +184,7 @@ export const travelRequestsRelations = relations(travelRequests, ({ one, many })
   }),
   approvals: many(travelApprovals),
   fulfillment: many(travelFulfillments),
+  booking: one(travelBookings),
   reimbursement: many(reimbursements),
   cashAdvances: many(cashAdvances),
 }));
@@ -197,6 +218,17 @@ export const travelFulfillmentsRelations = relations(travelFulfillments, ({ one 
   }),
   admin: one(users, {
     fields: [travelFulfillments.admin_id],
+    references: [users.id],
+  }),
+}));
+
+export const travelBookingsRelations = relations(travelBookings, ({ one }) => ({
+  travelRequest: one(travelRequests, {
+    fields: [travelBookings.travel_request_id],
+    references: [travelRequests.id],
+  }),
+  user: one(users, {
+    fields: [travelBookings.user_id],
     references: [users.id],
   }),
 }));

@@ -5,6 +5,7 @@ import { authMiddleware } from '../middleware/auth';
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { getTravelTracking } from '../lib/travel-tracking';
 import { getFinanceTransactions } from '../lib/finance-report';
+import { getUserCompanyId } from '../lib/travel-access';
 
 const dashboardRoutes = new Hono();
 const annualTravelQuota = 12;
@@ -132,14 +133,30 @@ dashboardRoutes.get('/stats', async (c) => {
     });
   }
 
-  const [upcoming] = await db.select({ count: sql<number>`count(*)` }).from(travelRequests).where(eq(travelRequests.status, 'APPROVED'));
-  const [ongoing] = await db.select({ count: sql<number>`count(*)` }).from(travelRequests).where(eq(travelRequests.status, 'FULFILLED'));
-  const [completed] = await db.select({ count: sql<number>`count(*)` }).from(travelRequests).where(eq(travelRequests.status, 'COMPLETED'));
+  const companyId = user.role === 'Admin Travel' ? await getUserCompanyId(user.id) : null;
+  if (user.role === 'Admin Travel' && companyId === null) {
+    return c.json({ error: 'Forbidden', message: 'The travel admin account is not associated with a company.' }, 403);
+  }
+
+  const travelStatConditions = [eq(users.role, 'Karyawan')];
+  if (user.role === 'Admin Travel' && companyId !== null) {
+    travelStatConditions.push(eq(users.company_id, companyId));
+  }
+
+  const travelStats = await db.select({
+    status: travelRequests.status,
+    count: sql<number>`count(*)`,
+  })
+    .from(travelRequests)
+    .innerJoin(users, eq(travelRequests.user_id, users.id))
+    .where(and(...travelStatConditions))
+    .groupBy(travelRequests.status);
+  const countByStatus = new Map(travelStats.map((item) => [item.status, Number(item.count)]));
 
   return c.json({
-    upcoming: Number(upcoming.count),
-    ongoing: Number(ongoing.count),
-    completed: Number(completed.count),
+    upcoming: countByStatus.get('APPROVED') ?? 0,
+    ongoing: countByStatus.get('FULFILLED') ?? 0,
+    completed: countByStatus.get('COMPLETED') ?? 0,
   });
 });
 
