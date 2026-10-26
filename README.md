@@ -363,8 +363,19 @@ Semua endpoint pengelolaan user hanya dapat digunakan Super Admin. User yang dib
 
 Penghapusan user bersifat permanen. Sesuai relasi database saat ini, penghapusan dapat menghapus data perjalanan, persetujuan, booking, uang muka, dan reimbursement terkait melalui foreign key `ON DELETE CASCADE`; pastikan data tersebut memang boleh dihapus sebelum memanggil endpoint.
 
-Departemen saat ini disimpan sebagai teks pada kolom `users.department`, bukan sebagai master tabel. Belum ada tabel atau CRUD API khusus untuk departemen maupun kebijakan perjalanan. Kuota perjalanan tahunan yang digunakan dashboard masih berupa konstanta aplikasi, sehingga master data tersebut belum dapat dikelola melalui API.
+Departemen saat ini disimpan sebagai teks pada kolom `users.department`, bukan sebagai master tabel. Kuota perjalanan tahunan yang digunakan dashboard masih berupa konstanta aplikasi, sehingga belum dapat dikelola melalui API.
 Saat membuat atau memperbarui Karyawan, `company_id` dan `supervisor_id` dapat dipakai untuk menentukan Atasan yang bertanggung jawab. Atasan harus berada di perusahaan yang sama. Antrean dan aksi Atasan dibatasi ke Karyawan yang memiliki `supervisor_id` tersebut.
+
+### Kebijakan Perjalanan dan Role & Permission
+
+```http
+GET /api/travel-policy
+PUT /api/travel-policy
+GET /api/role-permissions
+PUT /api/role-permissions
+```
+
+Semua endpoint ini hanya dapat digunakan Super Admin. `PUT /api/travel-policy` menerima nilai `max_hotel_per_night`, `allowed_hotel_class`, `flight_class`, `max_local_transport_per_day`, `daily_meal_allowance`, `max_cash_advance_percent`, dan `report_deadline_days`. `PUT /api/role-permissions` menerima `{ "roles": [{ "id": 1, "permission_ids": [1] }] }`; setiap role yang dikirim akan diperbarui dan role yang tidak dikirim tetap tidak berubah. Pengaturan awal kebijakan dan role/permission dibuat oleh migrasi database.
 
 ### Travel
 

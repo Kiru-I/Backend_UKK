@@ -7,6 +7,7 @@ import {
   int,
   mysqlEnum,
   mysqlTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -149,6 +150,35 @@ export const financeSettings = mysqlTable('finance_settings', {
   updated_by: int('updated_by').references(() => users.id, { onDelete: 'set null' }),
   updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
 });
+
+export const travelPolicies = mysqlTable('travel_policies', {
+  id: int('id').primaryKey(),
+  max_hotel_per_night: int('max_hotel_per_night').notNull(),
+  allowed_hotel_class: varchar('allowed_hotel_class', { length: 100 }).notNull(),
+  flight_class: varchar('flight_class', { length: 100 }).notNull(),
+  max_local_transport_per_day: int('max_local_transport_per_day').notNull(),
+  daily_meal_allowance: int('daily_meal_allowance').notNull(),
+  max_cash_advance_percent: int('max_cash_advance_percent').notNull(),
+  report_deadline_days: int('report_deadline_days').notNull(),
+  updated_at: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
+});
+
+export const roles = mysqlTable('roles', {
+  id: int('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+});
+
+export const permissions = mysqlTable('permissions', {
+  id: int('id').primaryKey(),
+  name: varchar('name', { length: 150 }).notNull().unique(),
+});
+
+export const rolePermissions = mysqlTable('role_permissions', {
+  role_id: int('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  permission_id: int('permission_id').notNull().references(() => permissions.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  rolePermissionPrimaryKey: primaryKey({ columns: [table.role_id, table.permission_id] }),
+}));
 
 export const reimbursementItems = mysqlTable('reimbursement_items', {
   id: int('id').autoincrement().primaryKey(),

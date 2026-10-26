@@ -10,6 +10,7 @@ import reimbursementRoutes from './routes/reimbursement';
 import cashAdvanceRoutes from './routes/cash-advance';
 import financeRoutes from './routes/finance';
 import dashboardRoutes from './routes/dashboard';
+import adminSettingsRoutes from './routes/admin-settings';
 
 const app = new Hono();
 
@@ -43,6 +44,7 @@ app.route('/api/reimbursements', reimbursementRoutes);
 app.route('/api/cash-advances', cashAdvanceRoutes);
 app.route('/api/finance', financeRoutes);
 app.route('/api/dashboard', dashboardRoutes);
+app.route('/api', adminSettingsRoutes);
 
 export default {
   port: Number(process.env.PORT || 3000),
