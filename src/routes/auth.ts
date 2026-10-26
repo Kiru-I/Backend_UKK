@@ -163,6 +163,9 @@ authRoutes.post('/login', async (c) => {
   if (!isValid) {
     return c.json({ error: 'Unauthorized', message: 'Invalid email or password.' }, 401);
   }
+  if (user.status !== 'ACTIVE') {
+    return c.json({ error: 'Forbidden', message: 'This account is not active.' }, 403);
+  }
 
   const token = await signToken({
     id: user.id,

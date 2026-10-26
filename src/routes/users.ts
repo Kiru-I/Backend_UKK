@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
-import { companies, users } from '../db/schema';
+import { companies, userStatuses, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth';
 import { hashPassword } from '../lib/auth';
 
@@ -24,6 +25,7 @@ const updateUserSchema = z.object({
   password: z.string().min(6).optional(),
   role: z.enum(['Karyawan', 'Atasan', 'Admin Travel', 'Tim Keuangan', 'Super Admin']).optional(),
   department: z.string().min(2).optional(),
+  status: z.enum(userStatuses).optional(),
   company_id: z.coerce.number().int().positive().nullable().optional(),
   supervisor_id: z.coerce.number().int().positive().nullable().optional(),
 });
@@ -54,7 +56,19 @@ usersRoutes.get('/', async (c) => {
     return c.json({ error: 'Forbidden', message: 'Only Super Admin can list users.' }, 403);
   }
 
-  const allUsers = await db.select().from(users);
+  const allUsers = await db.select({
+    id: users.id,
+    company_id: users.company_id,
+    supervisor_id: users.supervisor_id,
+    name: users.name,
+    email: users.email,
+    nik: users.nik,
+    role: users.role,
+    department: users.department,
+    status: users.status,
+    created_at: users.created_at,
+    updated_at: users.updated_at,
+  }).from(users);
   return c.json({ users: allUsers });
 });
 
@@ -104,6 +118,7 @@ usersRoutes.post('/', async (c) => {
       password_hash: passwordHash,
       role: parsed.data.role,
       department: parsed.data.department,
+      status: 'ACTIVE',
       company_id: parsed.data.company_id ?? null,
       supervisor_id: parsed.data.supervisor_id ?? null,
     },
@@ -117,6 +132,7 @@ usersRoutes.post('/', async (c) => {
       email: parsed.data.email,
       role: parsed.data.role,
       department: parsed.data.department,
+      status: 'ACTIVE',
       company_id: parsed.data.company_id ?? null,
       supervisor_id: parsed.data.supervisor_id ?? null,
     },
@@ -196,6 +212,7 @@ usersRoutes.put('/:id', async (c) => {
     email: parsed.data.email ?? record.email,
     role: role,
     department: parsed.data.department ?? record.department,
+    status: parsed.data.status ?? record.status,
     company_id: companyId,
     supervisor_id: supervisorId,
   };
@@ -207,6 +224,56 @@ usersRoutes.put('/:id', async (c) => {
   await db.update(users).set(updates).where(eq(users.id, id));
 
   return c.json({ message: 'User updated successfully.' });
+});
+
+usersRoutes.delete('/:id', async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'Super Admin') {
+    return c.json({ error: 'Forbidden', message: 'Only Super Admin can delete users.' }, 403);
+  }
+
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: 'Bad Request', message: 'User id must be a positive number.' }, 400);
+  }
+  if (id === user.id) {
+    return c.json({ error: 'Bad Request', message: 'You cannot delete your own account.' }, 400);
+  }
+
+  const [record] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+  if (!record) {
+    return c.json({ error: 'Not Found', message: 'User was not found.' }, 404);
+  }
+
+  await db.delete(users).where(eq(users.id, id));
+
+  return c.json({ message: 'User deleted successfully.' });
+});
+
+usersRoutes.post('/:id/reset-password', async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'Super Admin') {
+    return c.json({ error: 'Forbidden', message: 'Only Super Admin can reset user passwords.' }, 403);
+  }
+
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: 'Bad Request', message: 'User id must be a positive number.' }, 400);
+  }
+
+  const [record] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+  if (!record) {
+    return c.json({ error: 'Not Found', message: 'User was not found.' }, 404);
+  }
+
+  const temporaryPassword = randomBytes(18).toString('base64url');
+  const passwordHash = await hashPassword(temporaryPassword);
+  await db.update(users).set({ password_hash: passwordHash }).where(eq(users.id, id));
+
+  return c.json({
+    message: 'Password reset successfully.',
+    temporary_password: temporaryPassword,
+  });
 });
 
 export default usersRoutes;

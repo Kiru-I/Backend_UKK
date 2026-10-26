@@ -218,7 +218,7 @@ Response sukses registrasi:
 }
 ```
 
-Kode perusahaan harus aktif dan dicocokkan tanpa membedakan huruf besar/kecil. Kata sandi minimal 8 karakter serta mengandung huruf dan angka. Email dan NIK diperiksa agar tidak terdaftar pada perusahaan tersebut. Akun baru berstatus `PENDING_VERIFICATION`; registrasi tidak langsung memberikan token. Saat ini endpoint login belum memeriksa status akun, sehingga status `PENDING_VERIFICATION` belum mencegah pengguna memperoleh token jika kredensialnya benar. Path kompatibilitas `POST /api/auth/register` juga tersedia.
+Kode perusahaan harus aktif dan dicocokkan tanpa membedakan huruf besar/kecil. Kata sandi minimal 8 karakter serta mengandung huruf dan angka. Email dan NIK diperiksa agar tidak terdaftar pada perusahaan tersebut. Akun baru berstatus `PENDING_VERIFICATION`; registrasi tidak langsung memberikan token. Login dan endpoint terproteksi hanya tersedia untuk akun `ACTIVE`. Path kompatibilitas `POST /api/auth/register` juga tersedia.
 
 ### Login
 
@@ -355,9 +355,15 @@ POST /api/auth/change-password
 GET /api/users
 POST /api/users
 PUT /api/users/:id
+DELETE /api/users/:id
+POST /api/users/:id/reset-password
 ```
 
-Semua endpoint pengelolaan user hanya dapat digunakan Super Admin. Saat ini belum tersedia endpoint untuk menghapus user.
+Semua endpoint pengelolaan user hanya dapat digunakan Super Admin. User yang dibuat melalui endpoint admin langsung berstatus `ACTIVE`. `PUT /api/users/:id` menerima field `status` dengan nilai `ACTIVE`, `PENDING_VERIFICATION`, atau `REJECTED`; hanya status `ACTIVE` yang dapat login atau memakai token yang sudah diterbitkan. Reset password mengembalikan `temporary_password` satu kali; sampaikan nilainya dengan aman kepada pengguna agar segera diganti. Daftar user tidak menyertakan hash password.
+
+Penghapusan user bersifat permanen. Sesuai relasi database saat ini, penghapusan dapat menghapus data perjalanan, persetujuan, booking, uang muka, dan reimbursement terkait melalui foreign key `ON DELETE CASCADE`; pastikan data tersebut memang boleh dihapus sebelum memanggil endpoint.
+
+Departemen saat ini disimpan sebagai teks pada kolom `users.department`, bukan sebagai master tabel. Belum ada tabel atau CRUD API khusus untuk departemen maupun kebijakan perjalanan. Kuota perjalanan tahunan yang digunakan dashboard masih berupa konstanta aplikasi, sehingga master data tersebut belum dapat dikelola melalui API.
 Saat membuat atau memperbarui Karyawan, `company_id` dan `supervisor_id` dapat dipakai untuk menentukan Atasan yang bertanggung jawab. Atasan harus berada di perusahaan yang sama. Antrean dan aksi Atasan dibatasi ke Karyawan yang memiliki `supervisor_id` tersebut.
 
 ### Travel
@@ -728,7 +734,32 @@ Authorization: Bearer <token>
 
 ### Penghapusan user
 
-Saat ini belum tersedia endpoint untuk menghapus user.
+```http
+DELETE /api/users/:id
+Authorization: ******
+```
+
+Endpoint ini hanya dapat digunakan Super Admin. Penghapusan permanen dapat ikut menghapus data perjalanan dan transaksi terkait sesuai foreign key cascade.
+
+### Reset password user
+
+```http
+POST /api/users/:id/reset-password
+Authorization: ******
+```
+
+Respons mengembalikan password sementara satu kali:
+
+```json
+{
+  "message": "Password reset successfully.",
+  "temporary_password": "..."
+}
+```
+
+### Ubah status user
+
+`PUT /api/users/:id` menerima `status` opsional dengan salah satu nilai `ACTIVE`, `PENDING_VERIFICATION`, atau `REJECTED`.
 
 ### Buat pengajuan travel
 
