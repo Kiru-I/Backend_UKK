@@ -7,6 +7,7 @@ import {
   reimbursementItems,
   reimbursements,
   travelApprovals,
+  travelBookings,
   travelFulfillments,
   travelRequests,
   users,
@@ -102,6 +103,7 @@ async function resetTables() {
   await db.delete(cashAdvances);
   await db.delete(travelFulfillments);
   await db.delete(travelApprovals);
+  await db.delete(travelBookings);
   await db.delete(travelRequests);
   await db.delete(users);
   await db.delete(companies);
@@ -218,6 +220,43 @@ async function seed() {
   await db.insert(travelRequests).values(travelRecords);
 
   const createdTravelRequests = await db.select().from(travelRequests).orderBy(asc(travelRequests.id));
+  const operatorByTransportationMode: Record<TransportationModeSeed, string> = {
+    Pesawat: 'Garuda Indonesia',
+    'Kereta Api': 'Kereta Api Indonesia',
+    Travel: 'Nuvix Travel',
+    'Mobil Kantor': 'Kendaraan operasional perusahaan',
+  };
+  const bookingRecords = createdTravelRequests
+    .filter((travelRequest) => travelRequest.status === 'FULFILLED')
+    .slice(0, 12)
+    .map((travelRequest, index) => {
+      if (!travelRequest.transportation_mode) {
+        throw new Error(`Transportation mode for travel request ${travelRequest.id} is required to seed a booking.`);
+      }
+
+      const departureAt = new Date(travelRequest.start_date);
+      departureAt.setUTCHours(6, 0, 0, 0);
+      const arrivalAt = new Date(departureAt.getTime() + (2 + (index % 4)) * 60 * 60 * 1000);
+
+      return {
+        travel_request_id: travelRequest.id,
+        user_id: travelRequest.user_id,
+        booking_code: `SEED-BKG-${String(travelRequest.id).padStart(4, '0')}`,
+        transportation_mode: travelRequest.transportation_mode,
+        operator: operatorByTransportationMode[travelRequest.transportation_mode],
+        departure_at: departureAt,
+        arrival_at: arrivalAt,
+        hotel_name: `${travelRequest.destination} Business Hotel`,
+        room_type: index % 2 === 0 ? 'Deluxe' : 'Standard',
+        check_in_date: travelRequest.start_date,
+        check_out_date: travelRequest.end_date,
+      };
+    });
+
+  if (bookingRecords.length > 0) {
+    await db.insert(travelBookings).values(bookingRecords);
+  }
+
   const travelApprovalRecords = [];
   const travelFulfillmentRecords = [];
   const nextTravelIndexByUser = new Map<number, number>();
@@ -431,7 +470,7 @@ async function seed() {
     notes: 'Contoh penolakan untuk menguji riwayat persetujuan.',
   });
 
-  console.log('Seeded 2 companies, 20 users, 100 finance-linked travel requests, 12 pending approvals, 1 rejected request, 100 cash advances, 100 reimbursements, and 300 reimbursement items.');
+  console.log(`Seeded 2 companies, 20 users, 100 finance-linked travel requests, ${bookingRecords.length} bookings, 12 pending approvals, 1 rejected request, 100 cash advances, 100 reimbursements, and 300 reimbursement items.`);
 }
 
 seed().catch((error) => {
